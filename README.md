@@ -1,1 +1,1 @@
-# js-task-queue
+# simple-js-task-queue

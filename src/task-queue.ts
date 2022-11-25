@@ -11,21 +11,24 @@ import { getRandomTaskId, isWaitedTask } from "./utils";
 export interface TaskQueueProps {
   concurrency: number;
   catchError?: boolean;
+  memorizeTasks?: boolean;
 }
 
 export class TaskQueue {
   private catchError: boolean;
+  private memorizeTasks: boolean;
   private promiseQueues: Array<PromiseQueue> = [];
   private promiseQueueCapacity: number = 1;
-  private tasksWaitingQueue: Array<WaitedTask> = [];
   private taskLookup: Record<TaskId, Task> = {};
+  private tasksWaitingQueue: Array<WaitedTask> = [];
 
-  constructor({ concurrency, catchError }: TaskQueueProps) {
+  constructor({ concurrency, catchError, memorizeTasks }: TaskQueueProps) {
     if (concurrency < 1) {
       throw Error(`Invalid concurrency ${concurrency}`);
     }
 
     this.catchError = catchError ?? false;
+    this.memorizeTasks = memorizeTasks ?? false;
 
     this.promiseQueues = new Array(concurrency).fill(null).map((_, index) => ({
       queueId: index,
@@ -48,7 +51,10 @@ export class TaskQueue {
     return this.promiseQueues[bestQueueIndex];
   }
 
-  private async _run(task: Task, resolve: Resolve) {
+  private async _run<ReturnType>(
+    task: Task<ReturnType>,
+    resolve: Resolve<ReturnType>
+  ) {
     try {
       if (task.status === "idle") {
         task.status = "running";
@@ -71,19 +77,23 @@ export class TaskQueue {
     }
   }
 
-  private _addTask(task: Task | WaitedTask) {
-    this.taskLookup[task.taskId] = task;
+  private _addTask<ReturnType>(
+    task: Task<ReturnType> | WaitedTask<ReturnType>
+  ) {
+    if (this.memorizeTasks) {
+      this.taskLookup[task.taskId] = task;
+    }
 
     const _isWaitedTask = isWaitedTask(task);
 
     // the waited task already has the resolve function
-    let _resolve: Resolve;
+    let _resolve: Resolve<ReturnType>;
     if (_isWaitedTask) {
       _resolve = task.resolve;
     }
 
     // the waited task already has the promise
-    const _promise = _isWaitedTask
+    const _promise: Promise<ReturnType> = _isWaitedTask
       ? task.promise
       : new Promise((resolve) => {
           _resolve = resolve;
@@ -108,7 +118,7 @@ export class TaskQueue {
       promiseQueue.taskIds.push(task.taskId);
 
       promiseQueue.promise.then(() =>
-        this._run(task, (result: unknown) => {
+        this._run(task, (result: ReturnType) => {
           promiseQueue.length -= 1;
           promiseQueue.taskIds.shift();
 
@@ -133,8 +143,20 @@ export class TaskQueue {
     return _promise;
   }
 
-  async addTask(
-    callback: Function | Array<Function>,
+  async addTask<ReturnType>(
+    callback: () => ReturnType | Promise<ReturnType>,
+    taskId?: TaskId
+  ) {
+    return this._addTask({
+      taskId: taskId ?? getRandomTaskId(),
+      callback,
+      createdAt: new Date().getTime(),
+      status: "idle",
+    });
+  }
+
+  async addTasks<ReturnType>(
+    callback: () => (ReturnType | Promise<ReturnType>) | Array<() => unknown>,
     taskId?: TaskId | Array<TaskId>
   ) {
     if (
@@ -149,24 +171,14 @@ export class TaskQueue {
         const result: Array<Promise<unknown>> = [];
         for (let i = 0; i < callback.length; i++) {
           result.push(
-            this._addTask({
-              taskId: taskId?.[i] ?? getRandomTaskId(),
-              callback: callback[i],
-              createdAt: new Date().getTime(),
-              status: "idle",
-            })
+            this.addTask(callback[i], taskId?.[i] ?? getRandomTaskId())
           );
         }
 
         return Promise.all(result);
       }
     } else if (!Array.isArray(callback) && !Array.isArray(taskId)) {
-      return this._addTask({
-        taskId: taskId ?? getRandomTaskId(),
-        callback,
-        createdAt: new Date().getTime(),
-        status: "idle",
-      });
+      return this.addTask(callback, taskId ?? getRandomTaskId());
     } else {
       throw Error("Either callback or task ID is array");
     }
@@ -186,6 +198,14 @@ export class TaskQueue {
         ? allTasks.filter((task) => task.status === status)
         : allTasks;
     }
+  }
+
+  clearTask(taskId: TaskId) {
+    delete this.taskLookup[taskId];
+  }
+
+  clearAllTasks() {
+    this.taskLookup = {};
   }
 }
 

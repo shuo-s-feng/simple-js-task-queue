@@ -1,25 +1,25 @@
 {
   "name": "simple-js-task-queue",
-  "version": "0.0.1",
+  "version": "0.0.5",
   "description": "A simple javascript/typesciprt tasks queue that supports concurrency control",
   "main": "lib/index.js",
   "types": "types/index.d.ts",
   "scripts": {
-    "build": "yarn clean && tsc && cp package.json ./dist",
+    "build": "yarn clean && tsc && cp ./package.json ./dist && cp ./README.md ./dist",
     "test": "echo \"Error: no test specified\" && exit 1",
     "clean": "(rm -rf ./dist || true)",
-    "publish": "cd ./dist && npm publish"
+    "release": "cd ./dist && npm publish"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Sup-Friday/js-task-queue.git"
+    "url": "git+https://github.com/Sup-Friday/simple-js-task-queue.git"
   },
   "author": "Shuo Feng",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/Sup-Friday/js-task-queue/issues"
+    "url": "https://github.com/Sup-Friday/simple-js-task-queue/issues"
   },
-  "homepage": "https://github.com/Sup-Friday/js-task-queue#readme",
+  "homepage": "https://github.com/Sup-Friday/simple-js-task-queue#readme",
   "devDependencies": {
     "typescript": "^4.9.3"
   }
