@@ -1,21 +1,33 @@
 type TaskId = string | number;
 type TaskStatus = "idle" | "running" | "success" | "error";
+type QueueId = number;
 type Resolve<ReturnType> = (value: ReturnType) => void;
+type Reject = (error: Error) => void;
+type TaskStatusUpdateHandler<ReturnType> = (
+  status: TaskStatus,
+  task: Task<ReturnType>
+) => void;
 
 interface Task<ReturnType = any> {
   taskId: TaskId;
-  callback: () => ReturnType | Promise<ReturnType>;
-  createdAt: number;
   status: TaskStatus;
+  callback: () => ReturnType | Promise<ReturnType>;
+  onStatusUpdate?: TaskStatusUpdateHandler<ReturnType>;
+  createdAt: number;
+  queueId?: QueueId;
+  result?: ReturnType;
+  runAt?: number;
+  finishedAt?: number;
 }
 
 interface WaitedTask<ReturnType = any> extends Task<ReturnType> {
   resolve: Resolve<ReturnType>;
+  reject: Reject;
   promise: Promise<ReturnType>;
 }
 
 interface PromiseQueue {
-  queueId: number;
+  queueId: QueueId;
   promise: Promise<any>;
   length: number;
   taskIds: Array<TaskId>;
@@ -23,7 +35,14 @@ interface PromiseQueue {
 
 const RANDOM_BASE = 100000000;
 
-const getRandomTaskId = () => Math.random() * RANDOM_BASE;
+const getRandomTaskId = () => Math.floor(Math.random() * RANDOM_BASE);
+
+const isTaskId = (obj: any): obj is TaskId => {
+  if (typeof obj === "string" || typeof obj === "number") {
+    return true;
+  }
+  return false;
+};
 
 const isWaitedTask = (obj: any): obj is WaitedTask => {
   if (obj.resolve && obj.promise) {
@@ -34,24 +53,24 @@ const isWaitedTask = (obj: any): obj is WaitedTask => {
 
 export interface TaskQueueProps {
   concurrency: number;
-  catchError?: boolean;
+  returnError?: boolean;
   memorizeTasks?: boolean;
 }
 
 export class TaskQueue {
-  private catchError: boolean;
+  private returnError: boolean;
   private memorizeTasks: boolean;
   private promiseQueues: Array<PromiseQueue> = [];
   private promiseQueueCapacity: number = 1;
   private taskLookup: Record<TaskId, Task> = {};
   private tasksWaitingQueue: Array<WaitedTask> = [];
 
-  constructor({ concurrency, catchError, memorizeTasks }: TaskQueueProps) {
+  constructor({ concurrency, returnError, memorizeTasks }: TaskQueueProps) {
     if (concurrency < 1) {
       throw Error(`Invalid concurrency ${concurrency}`);
     }
 
-    this.catchError = catchError ?? false;
+    this.returnError = returnError ?? false;
     this.memorizeTasks = memorizeTasks ?? false;
 
     this.promiseQueues = new Array(concurrency).fill(null).map((_, index) => ({
@@ -60,6 +79,11 @@ export class TaskQueue {
       length: 0,
       taskIds: [],
     }));
+  }
+
+  private _updateTaskStatus(task: Task, status: TaskStatus) {
+    task.status = status;
+    task.onStatusUpdate?.(status, task);
   }
 
   private _getAvailablePromiseQueue() {
@@ -77,26 +101,32 @@ export class TaskQueue {
 
   private async _run<ReturnType>(
     task: Task<ReturnType>,
-    resolve: Resolve<ReturnType>
+    resolve: Resolve<ReturnType>,
+    reject: Reject
   ) {
     try {
       if (task.status === "idle") {
-        task.status = "running";
+        task.runAt = new Date().getTime();
+        this._updateTaskStatus(task, "running");
+
         const result = await task.callback();
         resolve(result);
-        task.status = "success";
+
+        task.result = result;
+        this._updateTaskStatus(task, "success");
+        task.finishedAt = new Date().getTime();
       } else {
         throw Error(
           `Task ${task.taskId} is already executed with status ${task.status}`
         );
       }
     } catch (error: any) {
-      task.status = "error";
+      this._updateTaskStatus(task, "error");
 
-      if (this.catchError) {
+      if (this.returnError) {
         resolve(error);
       } else {
-        throw error;
+        reject(error);
       }
     }
   }
@@ -112,15 +142,18 @@ export class TaskQueue {
 
     // the waited task already has the resolve function
     let _resolve: Resolve<ReturnType>;
+    let _reject: Reject;
     if (_isWaitedTask) {
       _resolve = task.resolve;
+      _reject = task.reject;
     }
 
     // the waited task already has the promise
     const _promise: Promise<ReturnType> = _isWaitedTask
       ? task.promise
-      : new Promise((resolve) => {
+      : new Promise((resolve, reject) => {
           _resolve = resolve;
+          _reject = reject;
         });
 
     const promiseQueue = this._getAvailablePromiseQueue();
@@ -131,6 +164,7 @@ export class TaskQueue {
         this.tasksWaitingQueue.push({
           ...task,
           resolve: _resolve,
+          reject: _reject,
           promise: _promise,
         });
       });
@@ -140,24 +174,40 @@ export class TaskQueue {
     else {
       promiseQueue.length += 1;
       promiseQueue.taskIds.push(task.taskId);
+      task.queueId = promiseQueue.queueId;
 
-      promiseQueue.promise.then(() =>
-        this._run(task, (result: ReturnType) => {
-          promiseQueue.length -= 1;
-          promiseQueue.taskIds.shift();
+      const resolveTask = (
+        result: ReturnType | Error,
+        resolve: Resolve<ReturnType> | Reject
+      ) => {
+        promiseQueue.length -= 1;
+        promiseQueue.taskIds.shift();
 
-          _resolve(result);
+        resolve(result as any);
 
-          // get and re-add the first task from the waiting queue after the previous "setTimeout" finishes appending tasks to the waiting queue
-          setTimeout(() => {
-            const nextTask = this.tasksWaitingQueue.shift();
+        // get and re-add the first task from the waiting queue after the previous "setTimeout" finishes appending tasks to the waiting queue
+        setTimeout(() => {
+          const nextTask = this.tasksWaitingQueue.shift();
 
-            if (nextTask) {
-              this._addTask(nextTask);
-            }
-          });
-        })
-      );
+          if (nextTask) {
+            this._addTask(nextTask);
+          }
+        });
+      };
+
+      const runTask = () =>
+        this._run(
+          task,
+          (result) => {
+            resolveTask(result, _resolve);
+          },
+          (error) => {
+            resolveTask(error, _reject);
+          }
+        );
+
+      // keep running tasks no matter the previous task is resolved or rejected
+      promiseQueue.promise.then(runTask).catch(runTask);
 
       // append the promise to the promise queue to serialize async task executions
       promiseQueue.promise = _promise;
@@ -167,45 +217,64 @@ export class TaskQueue {
     return _promise;
   }
 
+  addTask<ReturnType>(
+    callback: () => ReturnType | Promise<ReturnType>
+  ): Promise<ReturnType>;
+
+  addTask<ReturnType>(
+    callback: () => ReturnType | Promise<ReturnType>,
+    onStatusUpdate?: TaskStatusUpdateHandler<ReturnType>
+  ): Promise<ReturnType>;
+
+  addTask<ReturnType>(
+    callback: () => ReturnType | Promise<ReturnType>,
+    taskId?: TaskId | undefined,
+    onStatusUpdate?: TaskStatusUpdateHandler<ReturnType>
+  ): Promise<ReturnType>;
+
   async addTask<ReturnType>(
     callback: () => ReturnType | Promise<ReturnType>,
-    taskId?: TaskId
-  ) {
-    return this._addTask({
-      taskId: taskId ?? getRandomTaskId(),
-      callback,
-      createdAt: new Date().getTime(),
-      status: "idle",
-    });
+    taskIdOrOnStatusUpdate?: TaskId | TaskStatusUpdateHandler<ReturnType>,
+    onStatusUpdate?: TaskStatusUpdateHandler<ReturnType>
+  ): Promise<ReturnType> {
+    if (
+      isTaskId(taskIdOrOnStatusUpdate) ||
+      taskIdOrOnStatusUpdate === undefined
+    ) {
+      return this._addTask({
+        taskId: taskIdOrOnStatusUpdate ?? getRandomTaskId(),
+        callback,
+        createdAt: new Date().getTime(),
+        status: "idle",
+        onStatusUpdate,
+      });
+    } else {
+      return this._addTask({
+        taskId: getRandomTaskId(),
+        callback,
+        createdAt: new Date().getTime(),
+        status: "idle",
+        onStatusUpdate: taskIdOrOnStatusUpdate,
+      });
+    }
   }
 
-  async addTasks<ReturnType>(
-    callback: () => (ReturnType | Promise<ReturnType>) | Array<() => unknown>,
-    taskId?: TaskId | Array<TaskId>
+  async addTasks(
+    tasks: Array<{
+      callback: () => unknown;
+      taskId?: TaskId;
+      onStatusUpdate?: TaskStatusUpdateHandler<unknown>;
+    }>
   ) {
-    if (
-      Array.isArray(callback) &&
-      (Array.isArray(taskId) || taskId === undefined)
-    ) {
-      if (taskId?.length && callback.length !== taskId.length) {
-        throw Error(
-          `Callbacks count ${callback.length} does not match the task IDs count ${taskId.length}`
-        );
-      } else {
-        const result: Array<Promise<unknown>> = [];
-        for (let i = 0; i < callback.length; i++) {
-          result.push(
-            this.addTask(callback[i], taskId?.[i] ?? getRandomTaskId())
-          );
-        }
-
-        return Promise.all(result);
-      }
-    } else if (!Array.isArray(callback) && !Array.isArray(taskId)) {
-      return this.addTask(callback, taskId ?? getRandomTaskId());
-    } else {
-      throw Error("Either callback or task ID is array");
-    }
+    return Promise.all(
+      tasks.map((task) =>
+        this.addTask(
+          task.callback,
+          task.taskId ?? getRandomTaskId(),
+          task.onStatusUpdate
+        )
+      )
+    );
   }
 
   getTask(taskId: TaskId) {
