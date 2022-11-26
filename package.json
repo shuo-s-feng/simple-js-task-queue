@@ -1,6 +1,6 @@
 {
   "name": "simple-js-task-queue",
-  "version": "0.0.9",
+  "version": "0.1.0",
   "description": "A simple javascript/typesciprt tasks queue that supports concurrency control",
   "main": "lib/index.js",
   "types": "types/index.d.ts",
@@ -14,7 +14,7 @@
     "url": "git+https://github.com/Sup-Friday/simple-js-task-queue.git"
   },
   "author": "Shuo Feng",
-  "license": "ISC",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/Sup-Friday/simple-js-task-queue/issues"
   },
