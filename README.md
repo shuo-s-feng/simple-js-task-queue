@@ -102,4 +102,4 @@ queue
 
 ## License
 
-This library is [MIT licensed](./LICENSE).
+This library is [MIT licensed](./LICENSE.md).
