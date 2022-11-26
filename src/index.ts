@@ -160,7 +160,7 @@ export class TaskQueue {
 
     // if the promise queue reaches to its capacity, append the task to the waiting queue
     if (promiseQueue.length >= this.promiseQueueCapacity) {
-      setTimeout(() => {
+      Promise.resolve().then(() => {
         this.tasksWaitingQueue.push({
           ...task,
           resolve: _resolve,
@@ -185,8 +185,8 @@ export class TaskQueue {
 
         resolve(result as any);
 
-        // get and re-add the first task from the waiting queue after the previous "setTimeout" finishes appending tasks to the waiting queue
-        setTimeout(() => {
+        // get and re-add the first task from the waiting queue after the previous "Promise.resolve().then()" finishes appending tasks to the waiting queue
+        Promise.resolve().then(() => {
           const nextTask = this.tasksWaitingQueue.shift();
 
           if (nextTask) {
