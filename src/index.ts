@@ -1,14 +1,35 @@
-type TaskId = string | number;
-type TaskStatus = "idle" | "running" | "success" | "error";
-type QueueId = number;
+/**
+ * The unique ID of the task
+ */
+export type TaskId = string | number;
+/**
+ * The status of the task
+ */
+export type TaskStatus = "idle" | "running" | "success" | "error";
+/**
+ * The unique ID of the queue
+ */
+export type QueueId = number;
+/**
+ * Promise resolver
+ */
 type Resolve<ReturnType> = (value: ReturnType) => void;
+/**
+ * Promise rejecter
+ */
 type Reject = (error: Error) => void;
-type TaskStatusUpdateHandler<ReturnType> = (
+/**
+ * Task status changes handler
+ */
+export type TaskStatusUpdateHandler<ReturnType> = (
   status: TaskStatus,
   task: Task<ReturnType>
 ) => void;
 
-interface Task<ReturnType = any> {
+/**
+ * The task object
+ */
+export interface Task<ReturnType = any> {
   taskId: TaskId;
   status: TaskStatus;
   callback: () => ReturnType | Promise<ReturnType>;
