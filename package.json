@@ -5,7 +5,7 @@
   "main": "lib/index.js",
   "types": "types/index.d.ts",
   "scripts": {
-    "build": "yarn clean && tsc && cp ./package.json ./dist && cp ./README.md ./dist",
+    "build": "(rm -rf ./dist || true) && tsc && cp ./package.json ./dist && cp ./README.md ./dist",
     "test": "jest",
     "test:watch": "jest --watch",
     "clean": "(rm -rf ./dist || true) && (rm -rf ./coverage || true) && (rm -rf yarn-error.log || true) && (rm -rf yarn.lock || true)",

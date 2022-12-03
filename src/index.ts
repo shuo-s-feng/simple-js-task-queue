@@ -52,17 +52,32 @@ const isWaitedTask = (obj: any): obj is WaitedTask => {
 };
 
 export interface TaskQueueProps {
+  /**
+   * Maximum number of the concurrent running tasks
+   */
   concurrency: number;
+  /**
+   * If true, the error of executing the tasks will be returned (resolved to the returning promise)
+   */
   returnError?: boolean;
+  /**
+   * If true, getTask() and getAllTasks() will be available to retrieve task details
+   */
   memorizeTasks?: boolean;
 }
 
 export class TaskQueue {
+  /** @internal */
   private returnError: boolean;
+  /** @internal */
   private memorizeTasks: boolean;
+  /** @internal */
   private promiseQueues: Array<PromiseQueue> = [];
+  /** @internal */
   private promiseQueueCapacity: number = 1;
+  /** @internal */
   private taskLookup: Record<TaskId, Task> = {};
+  /** @internal */
   private tasksWaitingQueue: Array<WaitedTask> = [];
 
   constructor({ concurrency, returnError, memorizeTasks }: TaskQueueProps) {
@@ -81,11 +96,13 @@ export class TaskQueue {
     }));
   }
 
+  /** @internal */
   private _updateTaskStatus(task: Task, status: TaskStatus) {
     task.status = status;
     task.onStatusUpdate?.(status, task);
   }
 
+  /** @internal */
   private _getAvailablePromiseQueue() {
     let bestQueueIndex = -1;
     let bestLength = Infinity;
@@ -99,6 +116,7 @@ export class TaskQueue {
     return this.promiseQueues[bestQueueIndex];
   }
 
+  /** @internal */
   private async _run<ReturnType>(
     task: Task<ReturnType>,
     resolve: Resolve<ReturnType>,
@@ -131,6 +149,7 @@ export class TaskQueue {
     }
   }
 
+  /** @internal */
   private _addTask<ReturnType>(
     task: Task<ReturnType> | WaitedTask<ReturnType>
   ) {
@@ -140,7 +159,7 @@ export class TaskQueue {
 
     const _isWaitedTask = isWaitedTask(task);
 
-    // the waited task already has the resolve function
+    // The waited task already has the resolve function
     let _resolve: Resolve<ReturnType>;
     let _reject: Reject;
     if (_isWaitedTask) {
@@ -148,7 +167,7 @@ export class TaskQueue {
       _reject = task.reject;
     }
 
-    // the waited task already has the promise
+    // The waited task already has the promise
     const _promise: Promise<ReturnType> = _isWaitedTask
       ? task.promise
       : new Promise((resolve, reject) => {
@@ -158,7 +177,7 @@ export class TaskQueue {
 
     const promiseQueue = this._getAvailablePromiseQueue();
 
-    // if the promise queue reaches to its capacity, append the task to the waiting queue
+    // If the promise queue reaches to its capacity, append the task to the waiting queue
     if (promiseQueue.length >= this.promiseQueueCapacity) {
       Promise.resolve().then(() => {
         this.tasksWaitingQueue.push({
@@ -170,7 +189,7 @@ export class TaskQueue {
       });
     }
 
-    // if the promise queue does not reach to its capacity, append the task to the promise queue
+    // If the promise queue does not reach to its capacity, append the task to the promise queue
     else {
       promiseQueue.length += 1;
       promiseQueue.taskIds.push(task.taskId);
@@ -185,7 +204,7 @@ export class TaskQueue {
 
         resolve(result as any);
 
-        // get and re-add the first task from the waiting queue after the previous "Promise.resolve().then()" finishes appending tasks to the waiting queue
+        // Get and re-add the first task from the waiting queue after the previous "Promise.resolve().then()" finishes appending tasks to the waiting queue
         Promise.resolve().then(() => {
           const nextTask = this.tasksWaitingQueue.shift();
 
@@ -206,32 +225,48 @@ export class TaskQueue {
           }
         );
 
-      // keep running tasks no matter the previous task is resolved or rejected
+      // Keep running tasks no matter the previous task is resolved or rejected
       promiseQueue.promise.then(runTask).catch(runTask);
 
-      // append the promise to the promise queue to serialize async task executions
+      // Append the promise to the promise queue to serialize async task executions
       promiseQueue.promise = _promise;
     }
 
-    // return the result from the original callback function of the task
+    // Return the result from the original callback function of the task
     return _promise;
   }
 
+  /**
+   * Add a task with callback function to the queue
+   * @param callback The callback function of the task
+   */
   addTask<ReturnType>(
     callback: () => ReturnType | Promise<ReturnType>
   ): Promise<ReturnType>;
 
+  /**
+   * Add a task with callback function to the queue
+   * @param callback The callback function of the task
+   * @param onStatusUpdate The callback function to subscribe task status changes
+   */
   addTask<ReturnType>(
     callback: () => ReturnType | Promise<ReturnType>,
     onStatusUpdate?: TaskStatusUpdateHandler<ReturnType>
   ): Promise<ReturnType>;
 
+  /**
+   * Add a task with callback function to the queue
+   * @param callback The callback function of the task
+   * @param taskId The ID of the task
+   * @param onStatusUpdate The callback function to subscribe task status changes
+   */
   addTask<ReturnType>(
     callback: () => ReturnType | Promise<ReturnType>,
     taskId?: TaskId | undefined,
     onStatusUpdate?: TaskStatusUpdateHandler<ReturnType>
   ): Promise<ReturnType>;
 
+  /** @internal */
   async addTask<ReturnType>(
     callback: () => ReturnType | Promise<ReturnType>,
     taskIdOrOnStatusUpdate?: TaskId | TaskStatusUpdateHandler<ReturnType>,
@@ -259,6 +294,10 @@ export class TaskQueue {
     }
   }
 
+  /**
+   * Add tasks with callback functions to the queue
+   * @param tasks The array of tasks with callback functions, IDs, and task status changes subscriber
+   */
   async addTasks(
     tasks: Array<{
       callback: () => unknown;
@@ -277,11 +316,32 @@ export class TaskQueue {
     );
   }
 
+  /** @internal */
+  private _assertMemorizingTasksEnabled() {
+    if (!this.memorizeTasks) {
+      throw Error(
+        "Memorizing task details is not enabled. Please update the memorizeTasks configuration when initializing the queue instance"
+      );
+    }
+  }
+
+  /**
+   * Get the task details with task ID
+   * @param taskId The ID of the task
+   */
   getTask(taskId: TaskId) {
+    this._assertMemorizingTasksEnabled();
+
     return this.taskLookup[taskId];
   }
 
+  /**
+   * Get all task details with matching status
+   * @param status The matched status or array of statuses
+   */
   getAllTasks(status?: TaskStatus | Array<TaskStatus>) {
+    this._assertMemorizingTasksEnabled();
+
     const allTasks = Object.values(this.taskLookup);
 
     if (Array.isArray(status)) {
@@ -293,11 +353,22 @@ export class TaskQueue {
     }
   }
 
+  /**
+   * Clear the task details with task ID
+   * @param taskId The ID of the task
+   */
   clearTask(taskId: TaskId) {
+    this._assertMemorizingTasksEnabled();
+
     delete this.taskLookup[taskId];
   }
 
+  /**
+   * Clear all task details
+   */
   clearAllTasks() {
+    this._assertMemorizingTasksEnabled();
+
     this.taskLookup = {};
   }
 }
