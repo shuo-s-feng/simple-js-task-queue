@@ -6,7 +6,7 @@ const BASE_TIME_FACTOR = 50;
 
 const delay = (wait: number) => new Promise((res) => setTimeout(res, wait));
 
-// helper function to generate a task, which returns "Result {id}" after {wait * BASE_TIME_FACTOR} ms
+// Helper function to generate a task, which returns "Result {id}" after {wait * BASE_TIME_FACTOR} ms
 const generateTask = (id: number, wait: number) => {
   return async () => {
     await delay(wait * BASE_TIME_FACTOR);
@@ -14,12 +14,12 @@ const generateTask = (id: number, wait: number) => {
   };
 };
 
-// create tasks
+// Create tasks
 const tasks = new Array(TASK_COUNT)
   .fill(null)
   .map((_, index) => generateTask(index, index));
 
-// helper function to verify the result of the task
+// Helper function to verify the result of the task
 const verifyResult =
   (result: any, executeTimeUnit: number, startTime: number) =>
   (realResult: any) => {
@@ -31,28 +31,34 @@ const verifyResult =
     expect(realResult).toStrictEqual(result);
   };
 
-// helper function to verify task information
+type SimplifiedTask = {
+  taskId: string | number;
+  status: string;
+  result: any;
+};
+
+// Helper function to verify task information
 const verifyTasks = (
-  realTasks: Array<{
-    taskId: string | number;
-    status: string;
-    result: any;
-  }>,
-  tasks: Array<{
-    taskId: string | number;
-    status: string;
-    result: any;
-  }>
+  realTasks: Array<SimplifiedTask> | SimplifiedTask,
+  tasks: Array<SimplifiedTask> | SimplifiedTask
 ) => {
-  expect(realTasks.length).toBe(tasks.length);
+  if (Array.isArray(realTasks) && Array.isArray(tasks)) {
+    expect(realTasks.length).toBe(tasks.length);
 
-  for (let task of tasks) {
-    const realTask = realTasks.find(
-      (realTask) => realTask.taskId === task.taskId
-    );
+    for (let task of tasks) {
+      const realTask = realTasks.find(
+        (realTask) => realTask.taskId === task.taskId
+      );
 
-    expect(realTask?.status).toBe(task.status);
-    expect(realTask?.result).toBe(task.result);
+      expect(realTask?.status).toBe(task.status);
+      expect(realTask?.result).toBe(task.result);
+    }
+  } else if (!Array.isArray(realTasks) && !Array.isArray(tasks)) {
+    expect(realTasks?.status).toBe(tasks.status);
+    expect(realTasks?.result).toBe(tasks.result);
+    expect(realTasks?.result).toBe(tasks.result);
+  } else {
+    throw Error("Either realTasks or tasks is an array");
   }
 };
 
@@ -64,11 +70,11 @@ describe("simple-js-task-queue", () => {
   });
 
   afterEach(async () => {
-    // wait for all promises to finish before the next test case
+    // Wait for all promises to finish before the next test case
     await Promise.all(promises);
   });
 
-  it("should control concurrency for tasks #1", async () => {
+  it("controls concurrency for tasks #1", async () => {
     const queue = new TaskQueue({
       concurrency: 2,
     });
@@ -96,13 +102,14 @@ describe("simple-js-task-queue", () => {
     );
   });
 
-  it("should control concurrency for tasks #2", async () => {
+  it("controls concurrency for tasks #2", async () => {
     const queue = new TaskQueue({
       concurrency: 2,
     });
 
     const start = new Date().getTime();
 
+    // Total execution time will be 2 + 4 = 6
     promises.push(
       queue
         .addTasks([
@@ -129,7 +136,7 @@ describe("simple-js-task-queue", () => {
     );
   });
 
-  it("should return error if specified", async () => {
+  it("returns error if specified", async () => {
     const queue = new TaskQueue({
       concurrency: 2,
       returnError: true,
@@ -151,38 +158,100 @@ describe("simple-js-task-queue", () => {
     );
   });
 
-  it("should support the subscription to the task status updates", async () => {
+  it("supports the subscription to the task status updates", async () => {
     const queue = new TaskQueue({
       concurrency: 2,
     });
 
-    let times = 0;
+    let times1 = 0;
 
     promises.push(
       queue.addTask(tasks[1], 1, (status, task) => {
-        times += 1;
+        times1 += 1;
 
-        if (times === 1) {
+        if (times1 === 1) {
           expect(status).toBe("running");
-          expect(task.taskId).toBe(1);
-        } else if (times > 1) {
+          expect(task.result).toBe(undefined);
+        } else if (times1 > 1) {
           expect(status).toBe("success");
-          expect(task.taskId).toBe(1);
+          expect(task.result).toBe("Result 1");
+        }
+      })
+    );
+
+    let times2 = 0;
+
+    promises.push(
+      queue.addTask(tasks[1], (status, task) => {
+        times2 += 1;
+
+        if (times2 === 1) {
+          expect(status).toBe("running");
+          expect(task.result).toBe(undefined);
+        } else if (times2 > 1) {
+          expect(status).toBe("success");
+          expect(task.result).toBe("Result 1");
         }
       })
     );
   });
 
-  it("should support task information retrieval", async () => {
+  it("supports task information retrieval #1", async () => {
     const queue = new TaskQueue({
       concurrency: 2,
       memorizeTasks: true,
     });
 
-    // Task 1 goes to queue 1
     promises.push(
       queue.addTask(tasks[1], 1).then(() =>
-        verifyTasks(queue.getAllTasks() as any[], [
+        verifyTasks(queue.getTask(1) as SimplifiedTask, {
+          taskId: 1,
+          status: "success",
+          result: "Result 1",
+        })
+      )
+    );
+
+    promises.push(
+      queue.addTask(tasks[2], 2).then(() =>
+        verifyTasks(queue.getTask(2) as SimplifiedTask, {
+          taskId: 2,
+          status: "success",
+          result: "Result 2",
+        })
+      )
+    );
+
+    promises.push(
+      queue.addTask(tasks[3], 3).then(() =>
+        verifyTasks(queue.getTask(3) as SimplifiedTask, {
+          taskId: 3,
+          status: "success",
+          result: "Result 3",
+        })
+      )
+    );
+
+    promises.push(
+      queue.addTask(tasks[4], 4).then(() =>
+        verifyTasks(queue.getTask(4) as SimplifiedTask, {
+          taskId: 4,
+          status: "success",
+          result: "Result 4",
+        })
+      )
+    );
+  });
+
+  it("supports task information retrieval #2", async () => {
+    const queue = new TaskQueue({
+      concurrency: 2,
+      memorizeTasks: true,
+    });
+
+    promises.push(
+      queue.addTask(tasks[1], 1).then(() =>
+        verifyTasks(queue.getAllTasks() as Array<SimplifiedTask>, [
           {
             taskId: 1,
             status: "success",
@@ -207,10 +276,9 @@ describe("simple-js-task-queue", () => {
       )
     );
 
-    // Task 2 goes to queue 2
     promises.push(
       queue.addTask(tasks[2], 2).then(() =>
-        verifyTasks(queue.getAllTasks() as any[], [
+        verifyTasks(queue.getAllTasks() as Array<SimplifiedTask>, [
           {
             taskId: 1,
             status: "success",
@@ -235,10 +303,9 @@ describe("simple-js-task-queue", () => {
       )
     );
 
-    // Task 3 goes to queue 1
     promises.push(
       queue.addTask(tasks[3], 3).then(() =>
-        verifyTasks(queue.getAllTasks() as any[], [
+        verifyTasks(queue.getAllTasks() as Array<SimplifiedTask>, [
           {
             taskId: 1,
             status: "success",
@@ -263,10 +330,9 @@ describe("simple-js-task-queue", () => {
       )
     );
 
-    // Task 4 goes to queue 2
     promises.push(
       queue.addTask(tasks[4], 4).then(() =>
-        verifyTasks(queue.getAllTasks() as any[], [
+        verifyTasks(queue.getAllTasks() as Array<SimplifiedTask>, [
           {
             taskId: 1,
             status: "success",
@@ -290,5 +356,166 @@ describe("simple-js-task-queue", () => {
         ])
       )
     );
+  });
+
+  it("supports task information retrieval #3", async () => {
+    const queue = new TaskQueue({
+      concurrency: 2,
+      memorizeTasks: true,
+    });
+
+    promises.push(
+      queue.addTask(tasks[1], 1).then(() =>
+        verifyTasks(queue.getAllTasks("idle") as Array<SimplifiedTask>, [
+          {
+            taskId: 3,
+            status: "idle",
+            result: undefined,
+          },
+          {
+            taskId: 4,
+            status: "idle",
+            result: undefined,
+          },
+        ])
+      )
+    );
+
+    promises.push(
+      queue.addTask(tasks[2], 2).then(() =>
+        verifyTasks(
+          queue.getAllTasks(["idle", "success"]) as Array<SimplifiedTask>,
+          [
+            {
+              taskId: 1,
+              status: "success",
+              result: "Result 1",
+            },
+            {
+              taskId: 2,
+              status: "success",
+              result: "Result 2",
+            },
+            {
+              taskId: 4,
+              status: "idle",
+              result: undefined,
+            },
+          ]
+        )
+      )
+    );
+
+    promises.push(
+      queue.addTask(tasks[3], 3).then(() =>
+        verifyTasks(
+          queue.getAllTasks(["success", "running"]) as Array<SimplifiedTask>,
+          [
+            {
+              taskId: 1,
+              status: "success",
+              result: "Result 1",
+            },
+            {
+              taskId: 2,
+              status: "success",
+              result: "Result 2",
+            },
+            {
+              taskId: 3,
+              status: "success",
+              result: "Result 3",
+            },
+            {
+              taskId: 4,
+              status: "running",
+              result: undefined,
+            },
+          ]
+        )
+      )
+    );
+
+    promises.push(
+      queue.addTask(tasks[4], 4).then(() =>
+        verifyTasks(queue.getAllTasks(["success"]) as Array<SimplifiedTask>, [
+          {
+            taskId: 1,
+            status: "success",
+            result: "Result 1",
+          },
+          {
+            taskId: 2,
+            status: "success",
+            result: "Result 2",
+          },
+          {
+            taskId: 3,
+            status: "success",
+            result: "Result 3",
+          },
+          {
+            taskId: 4,
+            status: "success",
+            result: "Result 4",
+          },
+        ])
+      )
+    );
+  });
+
+  it("throws errors", async () => {
+    let queue: TaskQueue;
+
+    try {
+      queue = new TaskQueue({
+        concurrency: 0,
+      });
+    } catch (error) {
+      expect(error.message).toBe("Invalid concurrency 0");
+    }
+
+    queue = new TaskQueue({
+      concurrency: 2,
+    });
+    try {
+      queue.getTask(1);
+    } catch (error) {
+      expect(error.message).toBe(
+        "Memorizing task details is not enabled. Please update the memorizeTasks configuration when initializing the queue instance"
+      );
+    }
+    try {
+      queue.getAllTasks();
+    } catch (error) {
+      expect(error.message).toBe(
+        "Memorizing task details is not enabled. Please update the memorizeTasks configuration when initializing the queue instance"
+      );
+    }
+    try {
+      queue.clearTask(1);
+    } catch (error) {
+      expect(error.message).toBe(
+        "Memorizing task details is not enabled. Please update the memorizeTasks configuration when initializing the queue instance"
+      );
+    }
+    try {
+      queue.clearAllTasks();
+    } catch (error) {
+      expect(error.message).toBe(
+        "Memorizing task details is not enabled. Please update the memorizeTasks configuration when initializing the queue instance"
+      );
+    }
+
+    try {
+      queue = new TaskQueue({
+        concurrency: 1,
+      });
+
+      await queue.addTask(tasks[1], 1);
+      await queue.addTask(tasks[2], 1);
+    } catch (error) {
+      expect(error.message).toBe("Task 1 is already triggered");
+    }
   });
 });

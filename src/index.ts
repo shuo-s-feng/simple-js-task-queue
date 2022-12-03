@@ -16,6 +16,7 @@ interface Task<ReturnType = any> {
   createdAt: number;
   queueId?: QueueId;
   result?: ReturnType;
+  error?: Error;
   runAt?: number;
   finishedAt?: number;
 }
@@ -79,6 +80,8 @@ export class TaskQueue {
   private taskLookup: Record<TaskId, Task> = {};
   /** @internal */
   private tasksWaitingQueue: Array<WaitedTask> = [];
+  /** @internal */
+  private taskIdRegistry: Set<TaskId> = new Set();
 
   constructor({ concurrency, returnError, memorizeTasks }: TaskQueueProps) {
     if (concurrency < 1) {
@@ -123,7 +126,9 @@ export class TaskQueue {
     reject: Reject
   ) {
     try {
-      if (task.status === "idle") {
+      if (!this.taskIdRegistry.has(task.taskId) && task.status === "idle") {
+        this.taskIdRegistry.add(task.taskId);
+
         task.runAt = new Date().getTime();
         this._updateTaskStatus(task, "running");
 
@@ -134,11 +139,10 @@ export class TaskQueue {
         this._updateTaskStatus(task, "success");
         task.finishedAt = new Date().getTime();
       } else {
-        throw Error(
-          `Task ${task.taskId} is already executed with status ${task.status}`
-        );
+        throw Error(`Task ${task.taskId} is already triggered`);
       }
     } catch (error: any) {
+      task.error = error;
       this._updateTaskStatus(task, "error");
 
       if (this.returnError) {
