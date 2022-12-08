@@ -21,7 +21,7 @@ This lightweight, error-tolerant, no-dependency library helps easily manage conc
 ## Installation
 
 ```
-npm i --save simple-js-task-queue
+npm i simple-js-task-queue
 ```
 
 ## Example

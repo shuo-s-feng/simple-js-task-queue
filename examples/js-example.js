@@ -1,4 +1,4 @@
-const { TaskQueue } = require("simple-js-task-queue");
+const { TaskQueue } = require("../dist");
 
 // Initialize a queue with maximum concurrency 2, returning error if tasks fail, and memorizing task details
 const queue = new TaskQueue({
