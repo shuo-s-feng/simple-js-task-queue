@@ -24,6 +24,16 @@ This lightweight, error-tolerant, no-dependency library helps easily manage conc
 npm i simple-js-task-queue
 ```
 
+Or
+
+```
+yarn add simple-js-task-queue
+```
+
+## Demo
+
+Check out [this codesanbox project](https://codesandbox.io/s/react-typescript-forked-knts9f)!
+
 ## Example
 
 ```js
