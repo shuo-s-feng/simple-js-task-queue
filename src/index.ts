@@ -40,7 +40,10 @@ export class TaskQueue extends TaskQueueBase {
 	/** @internal */
 	private taskPrioritizationMode: TaskPrioritizationMode;
 
-	constructor({ taskPrioritizationMode = 'head', ...rest }: TaskQueueProps) {
+	constructor({
+		taskPrioritizationMode = 'head',
+		...rest
+	}: TaskQueueProps = {}) {
 		super(rest);
 
 		this.taskPrioritizationMode = taskPrioritizationMode;

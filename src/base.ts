@@ -147,8 +147,11 @@ export abstract class TaskQueueBase {
 
 		const promiseQueue = this._getAvailablePromiseQueue();
 
-		// If the promise queue reaches to its capacity, append the task to the waiting queue
-		if (promiseQueue.length >= this.promiseQueueCapacity) {
+		// If the promise queue reaches to its capacity or the queue is stopped, append the task to the waiting queue
+		if (
+			promiseQueue.length >= this.promiseQueueCapacity ||
+			this._shouldStop()
+		) {
 			Promise.resolve().then(() => {
 				this.tasksWaitingQueue.push({
 					...task,
@@ -176,6 +179,7 @@ export abstract class TaskQueueBase {
 
 				// Get and re-add the first task from the waiting queue after the previous "Promise.resolve().then()" finishes appending tasks to the waiting queue
 				Promise.resolve().then(() => {
+					// If stopped, directly return to skip the execution of next task
 					if (this._shouldStop()) {
 						return;
 					}
