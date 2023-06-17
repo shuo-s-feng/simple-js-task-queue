@@ -57,7 +57,7 @@ queue
 setTimeout(() => {
 	console.log(
 		'All task details:\n',
-		queue.getAllTasks().map((task) => ({
+		queue.getAllTasksDetails().map((task) => ({
 			result: task.result,
 			status: task.status,
 			createdAt: new Date(task.createdAt).toLocaleString(),

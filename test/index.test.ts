@@ -204,7 +204,7 @@ describe('simple-js-task-queue', () => {
 
 		promises.push(
 			queue.addTask(tasks[1], 1).then(() =>
-				verifyTasks(queue.getTask(1) as SimplifiedTask, {
+				verifyTasks(queue.getTaskDetails(1) as SimplifiedTask, {
 					taskId: 1,
 					status: 'success',
 					result: 'Result 1',
@@ -214,7 +214,7 @@ describe('simple-js-task-queue', () => {
 
 		promises.push(
 			queue.addTask(tasks[2], 2).then(() =>
-				verifyTasks(queue.getTask(2) as SimplifiedTask, {
+				verifyTasks(queue.getTaskDetails(2) as SimplifiedTask, {
 					taskId: 2,
 					status: 'success',
 					result: 'Result 2',
@@ -224,7 +224,7 @@ describe('simple-js-task-queue', () => {
 
 		promises.push(
 			queue.addTask(tasks[3], 3).then(() =>
-				verifyTasks(queue.getTask(3) as SimplifiedTask, {
+				verifyTasks(queue.getTaskDetails(3) as SimplifiedTask, {
 					taskId: 3,
 					status: 'success',
 					result: 'Result 3',
@@ -234,7 +234,7 @@ describe('simple-js-task-queue', () => {
 
 		promises.push(
 			queue.addTask(tasks[4], 4).then(() =>
-				verifyTasks(queue.getTask(4) as SimplifiedTask, {
+				verifyTasks(queue.getTaskDetails(4) as SimplifiedTask, {
 					taskId: 4,
 					status: 'success',
 					result: 'Result 4',
@@ -251,7 +251,7 @@ describe('simple-js-task-queue', () => {
 
 		promises.push(
 			queue.addTask(tasks[1], 1).then(() =>
-				verifyTasks(queue.getAllTasks() as Array<SimplifiedTask>, [
+				verifyTasks(queue.getAllTasksDetails() as Array<SimplifiedTask>, [
 					{
 						taskId: 1,
 						status: 'success',
@@ -278,7 +278,7 @@ describe('simple-js-task-queue', () => {
 
 		promises.push(
 			queue.addTask(tasks[2], 2).then(() =>
-				verifyTasks(queue.getAllTasks() as Array<SimplifiedTask>, [
+				verifyTasks(queue.getAllTasksDetails() as Array<SimplifiedTask>, [
 					{
 						taskId: 1,
 						status: 'success',
@@ -305,7 +305,7 @@ describe('simple-js-task-queue', () => {
 
 		promises.push(
 			queue.addTask(tasks[3], 3).then(() =>
-				verifyTasks(queue.getAllTasks() as Array<SimplifiedTask>, [
+				verifyTasks(queue.getAllTasksDetails() as Array<SimplifiedTask>, [
 					{
 						taskId: 1,
 						status: 'success',
@@ -332,7 +332,7 @@ describe('simple-js-task-queue', () => {
 
 		promises.push(
 			queue.addTask(tasks[4], 4).then(() =>
-				verifyTasks(queue.getAllTasks() as Array<SimplifiedTask>, [
+				verifyTasks(queue.getAllTasksDetails() as Array<SimplifiedTask>, [
 					{
 						taskId: 1,
 						status: 'success',
@@ -366,7 +366,7 @@ describe('simple-js-task-queue', () => {
 
 		promises.push(
 			queue.addTask(tasks[1], 1).then(() =>
-				verifyTasks(queue.getAllTasks('idle') as Array<SimplifiedTask>, [
+				verifyTasks(queue.getAllTasksDetails('idle') as Array<SimplifiedTask>, [
 					{
 						taskId: 3,
 						status: 'idle',
@@ -384,7 +384,10 @@ describe('simple-js-task-queue', () => {
 		promises.push(
 			queue.addTask(tasks[2], 2).then(() =>
 				verifyTasks(
-					queue.getAllTasks(['idle', 'success']) as Array<SimplifiedTask>,
+					queue.getAllTasksDetails([
+						'idle',
+						'success',
+					]) as Array<SimplifiedTask>,
 					[
 						{
 							taskId: 1,
@@ -409,7 +412,10 @@ describe('simple-js-task-queue', () => {
 		promises.push(
 			queue.addTask(tasks[3], 3).then(() =>
 				verifyTasks(
-					queue.getAllTasks(['success', 'running']) as Array<SimplifiedTask>,
+					queue.getAllTasksDetails([
+						'success',
+						'running',
+					]) as Array<SimplifiedTask>,
 					[
 						{
 							taskId: 1,
@@ -438,28 +444,31 @@ describe('simple-js-task-queue', () => {
 
 		promises.push(
 			queue.addTask(tasks[4], 4).then(() =>
-				verifyTasks(queue.getAllTasks(['success']) as Array<SimplifiedTask>, [
-					{
-						taskId: 1,
-						status: 'success',
-						result: 'Result 1',
-					},
-					{
-						taskId: 2,
-						status: 'success',
-						result: 'Result 2',
-					},
-					{
-						taskId: 3,
-						status: 'success',
-						result: 'Result 3',
-					},
-					{
-						taskId: 4,
-						status: 'success',
-						result: 'Result 4',
-					},
-				]),
+				verifyTasks(
+					queue.getAllTasksDetails(['success']) as Array<SimplifiedTask>,
+					[
+						{
+							taskId: 1,
+							status: 'success',
+							result: 'Result 1',
+						},
+						{
+							taskId: 2,
+							status: 'success',
+							result: 'Result 2',
+						},
+						{
+							taskId: 3,
+							status: 'success',
+							result: 'Result 3',
+						},
+						{
+							taskId: 4,
+							status: 'success',
+							result: 'Result 4',
+						},
+					],
+				),
 			),
 		);
 	});
@@ -479,28 +488,28 @@ describe('simple-js-task-queue', () => {
 			concurrency: 2,
 		});
 		try {
-			queue.getTask(1);
+			queue.getTaskDetails(1);
 		} catch (error) {
 			expect(error.message).toBe(
 				'Memorizing task details is not enabled. Please update the memorizeTasks configuration when initializing the queue instance',
 			);
 		}
 		try {
-			queue.getAllTasks();
+			queue.getAllTasksDetails();
 		} catch (error) {
 			expect(error.message).toBe(
 				'Memorizing task details is not enabled. Please update the memorizeTasks configuration when initializing the queue instance',
 			);
 		}
 		try {
-			queue.clearTask(1);
+			queue.clearTaskDetails(1);
 		} catch (error) {
 			expect(error.message).toBe(
 				'Memorizing task details is not enabled. Please update the memorizeTasks configuration when initializing the queue instance',
 			);
 		}
 		try {
-			queue.clearAllTasks();
+			queue.clearAllTasksDetails();
 		} catch (error) {
 			expect(error.message).toBe(
 				'Memorizing task details is not enabled. Please update the memorizeTasks configuration when initializing the queue instance',
