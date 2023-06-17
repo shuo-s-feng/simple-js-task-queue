@@ -31,43 +31,43 @@ const { TaskQueue } = require('simple-js-task-queue');
 
 // Initialize a queue with maximum concurrency 2, returning error if tasks fail, and memorizing task details
 const queue = new TaskQueue({
-	concurrency: 2,
-	returnError: true,
-	memorizeTasks: true,
+  concurrency: 2,
+  returnError: true,
+  memorizeTasks: true,
 });
 
 // Helper function to generate a task, which returns "Result {id}" after {wait} seconds
 const generateTask = (id, wait) => {
-	return async () => {
-		await new Promise((res) => setTimeout(res, wait * 1000));
-		return `Result ${id}`;
-	};
+  return async () => {
+    await new Promise((res) => setTimeout(res, wait * 1000));
+    return `Result ${id}`;
+  };
 };
 
 // Helper function to handle the result of the task
 const handleTaskResult = (taskId, result) => {
-	console.log(
-		`After ${
-			(new Date().getTime() - start) / 1000
-		} seconds, the result of task ${taskId} is ${result}`,
-	);
+  console.log(
+    `After ${
+      (new Date().getTime() - start) / 1000
+    } seconds, the result of task ${taskId} is ${result}`,
+  );
 };
 
 // Helper function to handle the task status changes
 const handleTaskStatusChange = (status, task) => {
-	console.log(
-		`After ${
-			(new Date().getTime() - start) / 1000
-		} seconds, the status of task 3 changed to ${status} with result ${
-			task.result
-		}`,
-	);
+  console.log(
+    `After ${
+      (new Date().getTime() - start) / 1000
+    } seconds, the status of task 3 changed to ${status} with result ${
+      task.result
+    }`,
+  );
 };
 
 // Create tasks
 const tasks = new Array(4)
-	.fill(null)
-	.map((_, index) => generateTask(index, index));
+  .fill(null)
+  .map((_, index) => generateTask(index, index));
 
 const start = new Date().getTime();
 
@@ -79,21 +79,21 @@ queue.addTask(tasks[2], 2).then((result) => handleTaskResult(2, result));
 
 // Run task 3 with ID 3, subscribe to the task status updates, and log the result
 queue
-	.addTask(tasks[3], 3, handleTaskStatusChange)
-	.then((result) => handleTaskResult(3, result));
+  .addTask(tasks[3], 3, handleTaskStatusChange)
+  .then((result) => handleTaskResult(3, result));
 
 // Log all task details after 5 seconds
 setTimeout(() => {
-	console.log(
-		'All task details:\n',
-		queue.getAllTasksDetails().map((task) => ({
-			result: task.result,
-			status: task.status,
-			createdAt: new Date(task.createdAt).toLocaleString(),
-			runAt: new Date(task.runAt).toLocaleString(),
-			finishedAt: new Date(task.finishedAt).toLocaleString(),
-		})),
-	);
+  console.log(
+    'All task details:\n',
+    queue.getAllTasksDetails().map((task) => ({
+      result: task.result,
+      status: task.status,
+      createdAt: new Date(task.createdAt).toLocaleString(),
+      runAt: new Date(task.runAt).toLocaleString(),
+      finishedAt: new Date(task.finishedAt).toLocaleString(),
+    })),
+  );
 }, 5000);
 
 // logs
