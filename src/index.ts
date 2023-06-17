@@ -21,7 +21,7 @@ type Reject = (error: Error) => void;
 /**
  * Task status changes handler
  */
-export type TaskStatusUpdateHandler<ReturnType> = (
+export type TaskStatusUpdateHandler<ReturnType = any> = (
 	status: TaskStatus,
 	task: Task<ReturnType>,
 ) => void;
@@ -77,7 +77,7 @@ export interface TaskQueueProps {
 	/**
 	 * Maximum number of the concurrent running tasks
 	 */
-	concurrency: number;
+	concurrency?: number;
 	/**
 	 * If true, the error of executing the tasks will be returned (resolved to the returning promise)
 	 */
@@ -86,6 +86,10 @@ export interface TaskQueueProps {
 	 * If true, getTask() and getAllTasks() will be available to retrieve task details
 	 */
 	memorizeTasks?: boolean;
+	/**
+	 * Listener for task status chagnes
+	 */
+	onTaskStatusUpdate?: TaskStatusUpdateHandler;
 }
 
 export class TaskQueue {
@@ -103,8 +107,15 @@ export class TaskQueue {
 	private tasksWaitingQueue: Array<WaitedTask> = [];
 	/** @internal */
 	private taskIdRegistry: Set<TaskId> = new Set();
+	/** @internal */
+	private onTaskStatusUpdate: TaskStatusUpdateHandler | undefined = undefined;
 
-	constructor({ concurrency, returnError, memorizeTasks }: TaskQueueProps) {
+	constructor({
+		concurrency = 1,
+		returnError,
+		memorizeTasks,
+		onTaskStatusUpdate,
+	}: TaskQueueProps) {
 		if (concurrency < 1) {
 			throw Error(`Invalid concurrency ${concurrency}`);
 		}
@@ -118,12 +129,15 @@ export class TaskQueue {
 			length: 0,
 			taskIds: [],
 		}));
+
+		this.onTaskStatusUpdate = onTaskStatusUpdate;
 	}
 
 	/** @internal */
 	private _updateTaskStatus(task: Task, status: TaskStatus) {
 		task.status = status;
 		task.onStatusUpdate?.(status, task);
+		this.onTaskStatusUpdate?.(status, task);
 	}
 
 	/** @internal */
@@ -395,6 +409,13 @@ export class TaskQueue {
 		this._assertMemorizingTasksEnabled();
 
 		this.taskLookup = {};
+	}
+
+	/**
+	 * Subscribe to the task status chagnes
+	 */
+	subscribeTaskStatusChange(onTaskStatusUpdate: TaskStatusUpdateHandler) {
+		this.onTaskStatusUpdate = onTaskStatusUpdate;
 	}
 }
 
