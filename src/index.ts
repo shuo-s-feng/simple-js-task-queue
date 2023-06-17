@@ -57,7 +57,7 @@ interface PromiseQueue {
 
 const RANDOM_BASE = 100000000;
 
-const getRandomTaskId = () => Math.floor(Math.random() * RANDOM_BASE);
+const getTaskId = () => Math.floor(Math.random() * RANDOM_BASE);
 
 const isTaskId = (obj: any): obj is TaskId => {
 	if (typeof obj === 'string' || typeof obj === 'number') {
@@ -109,19 +109,22 @@ export class TaskQueue {
 	private taskIdRegistry: Set<TaskId> = new Set();
 	/** @internal */
 	private onTaskStatusUpdate: TaskStatusUpdateHandler | undefined = undefined;
+	/** @internal */
+	private stopped: boolean = false;
 
 	constructor({
 		concurrency = 1,
-		returnError,
-		memorizeTasks,
+		returnError = false,
+		memorizeTasks = false,
 		onTaskStatusUpdate,
 	}: TaskQueueProps) {
 		if (concurrency < 1) {
 			throw Error(`Invalid concurrency ${concurrency}`);
 		}
 
-		this.returnError = returnError ?? false;
-		this.memorizeTasks = memorizeTasks ?? false;
+		this.returnError = returnError;
+		this.memorizeTasks = memorizeTasks;
+		this.onTaskStatusUpdate = onTaskStatusUpdate;
 
 		this.promiseQueues = new Array(concurrency).fill(null).map((_, index) => ({
 			queueId: index,
@@ -129,8 +132,6 @@ export class TaskQueue {
 			length: 0,
 			taskIds: [],
 		}));
-
-		this.onTaskStatusUpdate = onTaskStatusUpdate;
 	}
 
 	/** @internal */
@@ -245,6 +246,10 @@ export class TaskQueue {
 
 				// Get and re-add the first task from the waiting queue after the previous "Promise.resolve().then()" finishes appending tasks to the waiting queue
 				Promise.resolve().then(() => {
+					if (this.stopped) {
+						return;
+					}
+
 					const nextTask = this.tasksWaitingQueue.shift();
 
 					if (nextTask) {
@@ -316,7 +321,7 @@ export class TaskQueue {
 			taskIdOrOnStatusUpdate === undefined
 		) {
 			return this._addTask({
-				taskId: taskIdOrOnStatusUpdate ?? getRandomTaskId(),
+				taskId: taskIdOrOnStatusUpdate ?? getTaskId(),
 				callback,
 				createdAt: new Date().getTime(),
 				status: 'idle',
@@ -324,7 +329,7 @@ export class TaskQueue {
 			});
 		} else {
 			return this._addTask({
-				taskId: getRandomTaskId(),
+				taskId: getTaskId(),
 				callback,
 				createdAt: new Date().getTime(),
 				status: 'idle',
@@ -348,7 +353,7 @@ export class TaskQueue {
 			tasks.map((task) =>
 				this.addTask(
 					task.callback,
-					task.taskId ?? getRandomTaskId(),
+					task.taskId ?? getTaskId(),
 					task.onStatusUpdate,
 				),
 			),
@@ -368,7 +373,7 @@ export class TaskQueue {
 	 * Get the task details with task ID
 	 * @param taskId The ID of the task
 	 */
-	getTask(taskId: TaskId) {
+	getTaskDetails(taskId: TaskId) {
 		this._assertMemorizingTasksEnabled();
 
 		return this.taskLookup[taskId];
@@ -378,7 +383,7 @@ export class TaskQueue {
 	 * Get all task details with matching status
 	 * @param status The matched status or array of statuses
 	 */
-	getAllTasks(status?: TaskStatus | Array<TaskStatus>) {
+	getAllTasksDetails(status?: TaskStatus | Array<TaskStatus>) {
 		this._assertMemorizingTasksEnabled();
 
 		const allTasks = Object.values(this.taskLookup);
@@ -396,7 +401,7 @@ export class TaskQueue {
 	 * Clear the task details with task ID
 	 * @param taskId The ID of the task
 	 */
-	clearTask(taskId: TaskId) {
+	clearTaskDetails(taskId: TaskId) {
 		this._assertMemorizingTasksEnabled();
 
 		delete this.taskLookup[taskId];
@@ -405,7 +410,7 @@ export class TaskQueue {
 	/**
 	 * Clear all task details
 	 */
-	clearAllTasks() {
+	clearAllTasksDetails() {
 		this._assertMemorizingTasksEnabled();
 
 		this.taskLookup = {};
@@ -416,6 +421,34 @@ export class TaskQueue {
 	 */
 	subscribeTaskStatusChange(onTaskStatusUpdate: TaskStatusUpdateHandler) {
 		this.onTaskStatusUpdate = onTaskStatusUpdate;
+	}
+
+	/**
+	 * Stop the queue execution
+	 * @returns The array of waited pending tasks
+	 */
+	stop() {
+		this.stopped = true;
+		return this.tasksWaitingQueue;
+	}
+
+	/**
+	 * Start the queue execution
+	 * @returns The array of waited
+	 */
+	start(tasksWaitingQueue?: Array<WaitedTask>) {
+		this.stopped = false;
+
+		if (tasksWaitingQueue) {
+			this.tasksWaitingQueue = tasksWaitingQueue;
+		}
+
+		while (this.tasksWaitingQueue.length) {
+			const task = this.tasksWaitingQueue.shift();
+			if (task) {
+				this._addTask(task);
+			}
+		}
 	}
 }
 
