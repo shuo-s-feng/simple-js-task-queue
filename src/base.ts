@@ -10,19 +10,25 @@ import {
   TaskStatus,
 } from './type';
 
-const PROMISE_QUEUE_CAPACITY = 1;
-
 export interface TaskQueueBaseProps {
   /**
+   * If true, print console logs of the task queue execution details
+   * @default false
+   */
+  verbose?: boolean;
+  /**
    * Maximum number of the concurrent running tasks
+   * @default 1
    */
   concurrency?: number;
   /**
    * If true, the error of executing the tasks will be returned (resolved to the returning promise)
+   * @default false
    */
   returnError?: boolean;
   /**
    * If true, getTask() and getAllTasks() will be available to retrieve task details
+   * @default false
    */
   memorizeTasks?: boolean;
   /**
@@ -31,7 +37,13 @@ export interface TaskQueueBaseProps {
   onTaskStatusUpdate?: TaskStatusUpdateHandler;
 }
 
+/**
+ * Base abstract class for task queue, which is only responsible for serialized tasks execution and
+ * should not expose any public methods
+ */
 export abstract class TaskQueueBase {
+  /** @internal */
+  private verbose: boolean;
   /** @internal */
   private returnError: boolean;
   /** @internal */
@@ -39,17 +51,12 @@ export abstract class TaskQueueBase {
   /** @internal */
   protected promiseQueues: Array<PromiseQueue> = [];
   /** @internal */
-  private promiseQueueCapacity: number = PROMISE_QUEUE_CAPACITY;
-  /** @internal */
   protected taskLookup: Record<TaskId, Task> = {};
-  /** @internal */
-  protected tasksWaitingQueue: Array<WaitedTask> = [];
-  /** @internal */
-  private taskIdRegistry: Set<TaskId> = new Set();
   /** @internal */
   protected onTaskStatusUpdate: TaskStatusUpdateHandler | undefined = undefined;
 
   constructor({
+    verbose = false,
     concurrency = 1,
     returnError = false,
     memorizeTasks = false,
@@ -59,6 +66,7 @@ export abstract class TaskQueueBase {
       throw Error(`Invalid concurrency ${concurrency}`);
     }
 
+    this.verbose = verbose;
     this.returnError = returnError;
     this.memorizeTasks = memorizeTasks;
     this.onTaskStatusUpdate = onTaskStatusUpdate;
@@ -72,11 +80,23 @@ export abstract class TaskQueueBase {
   }
 
   /** @internal */
-  protected abstract _getAvailablePromiseQueue(): PromiseQueue;
+  protected abstract _getAvailablePromiseQueue():
+    | PromiseQueue
+    | undefined
+    | null;
   /** @internal */
-  protected abstract _getNextTask(): WaitedTask | undefined;
+  protected abstract _pushTaskToWaitingQueue(task: Task): void;
   /** @internal */
-  protected abstract _shouldStop(): boolean;
+  protected abstract _getNextTask(): WaitedTask | undefined | null;
+  /** @internal */
+  protected abstract _shouldStop(task: Task): boolean;
+
+  /** @internal */
+  protected _log(...data: Array<any>) {
+    if (this.verbose) {
+      console.log(...data);
+    }
+  }
 
   /** @internal */
   private _updateTaskStatus(task: Task, status: TaskStatus) {
@@ -92,9 +112,7 @@ export abstract class TaskQueueBase {
     reject: Reject,
   ) {
     try {
-      if (!this.taskIdRegistry.has(task.taskId) && task.status === 'idle') {
-        this.taskIdRegistry.add(task.taskId);
-
+      if (task.status === 'idle') {
         task.runAt = new Date().getTime();
         this._updateTaskStatus(task, 'running');
 
@@ -123,6 +141,8 @@ export abstract class TaskQueueBase {
   protected _addTask<ReturnType>(
     task: Task<ReturnType> | WaitedTask<ReturnType>,
   ) {
+    this._log('Processing task:\n', task);
+
     if (this.memorizeTasks) {
       this.taskLookup[task.taskId] = task;
     }
@@ -146,23 +166,21 @@ export abstract class TaskQueueBase {
         });
 
     const promiseQueue = this._getAvailablePromiseQueue();
+    this._log('Get promise queue:\n', promiseQueue);
 
-    // If the promise queue reaches to its capacity or the queue is stopped, append the task to the waiting queue
-    if (
-      promiseQueue.length >= this.promiseQueueCapacity ||
-      this._shouldStop()
-    ) {
+    // If there is no available promise queue or we should stop the execution, append the task to the waiting queue
+    if (!promiseQueue || this._shouldStop(task)) {
       Promise.resolve().then(() => {
-        this.tasksWaitingQueue.push({
+        this._pushTaskToWaitingQueue({
           ...task,
           resolve: _resolve,
           reject: _reject,
           promise: _promise,
-        });
+        } as WaitedTask);
       });
     }
 
-    // If the promise queue does not reach to its capacity, append the task to the promise queue
+    // If there is an available promise queue, append the task to it
     else {
       promiseQueue.length += 1;
       promiseQueue.taskIds.push(task.taskId);
@@ -176,23 +194,31 @@ export abstract class TaskQueueBase {
         promiseQueue.taskIds.shift();
 
         resolve(result as any);
+        this._log(
+          `Resolved task ${task.taskId} with result or error ${result}`,
+        );
+
+        // If stopped, directly return to skip the execution of next task
+        if (this._shouldStop(task)) {
+          return;
+        }
 
         // Get and re-add the first task from the waiting queue after the previous "Promise.resolve().then()" finishes appending tasks to the waiting queue
         Promise.resolve().then(() => {
-          // If stopped, directly return to skip the execution of next task
-          if (this._shouldStop()) {
-            return;
-          }
-
           const nextTask = this._getNextTask();
           if (nextTask) {
             this._addTask(nextTask);
+            this._log(
+              `Picked the next task ${nextTask.taskId} to continue execution`,
+            );
           }
         });
       };
 
-      const runTask = () =>
-        this._runTask(
+      const runTask = () => {
+        this._log(`Running task ${task.taskId}`);
+
+        return this._runTask(
           task,
           (result) => {
             resolveTask(result, _resolve);
@@ -201,15 +227,19 @@ export abstract class TaskQueueBase {
             resolveTask(error, _reject);
           },
         );
+      };
 
       // Keep running tasks no matter the previous task is resolved or rejected
+      // NOTE: You do not need to change this for most cases
       promiseQueue.promise.then(runTask).catch(runTask);
 
       // Append the promise to the promise queue to serialize async task executions
+      // NOTE: You do not need to change this for most cases
       promiseQueue.promise = _promise;
     }
 
     // Return the result from the original callback function of the task
+    // NOTE: You do not need to change this for most cases
     return _promise;
   }
 }

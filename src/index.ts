@@ -1,9 +1,11 @@
 import TaskQueueBase, { TaskQueueBaseProps } from './base';
 import {
+  Task,
   TaskId,
   TaskPrioritizationMode,
   TaskStatus,
   TaskStatusUpdateHandler,
+  WaitedTask,
   isTaskId,
 } from './type';
 import { getTaskId } from './utils';
@@ -15,7 +17,14 @@ export type {
   Task,
 } from './type';
 
+const PROMISE_QUEUE_CAPACITY = 1;
+
 export interface TaskQueueProps extends TaskQueueBaseProps {
+  /**
+   * If true, the error of executing the tasks will stop the queue execution
+   * @default true
+   */
+  stopOnError?: boolean;
   /**
    * Pending task prioritization mode. It affects how the task queue picks the next task to be executed.
    * Please note, the task queue will auto execute the tasks whenever given, the first task will always be executed first no matter which priority mode is selected
@@ -36,16 +45,28 @@ export interface TaskQueueProps extends TaskQueueBaseProps {
  */
 export class TaskQueue extends TaskQueueBase {
   /** @internal */
+  private stopOnError: boolean;
+  /** @internal */
   private stopped: boolean = false;
   /** @internal */
+  private promiseQueueCapacity: number = PROMISE_QUEUE_CAPACITY;
+  /** @internal */
   private taskPrioritizationMode: TaskPrioritizationMode;
+  /** @internal */
+  protected tasksWaitingQueue: Array<WaitedTask> = [];
+  /** @internal */
+  protected prioritizedTasksWaitingQueue: Array<WaitedTask> = [];
+  /** @internal */
+  protected failedRetryableTaskQueue: Array<Task> = [];
 
   constructor({
+    stopOnError = true,
     taskPrioritizationMode = 'head',
     ...rest
   }: TaskQueueProps = {}) {
     super(rest);
 
+    this.stopOnError = stopOnError;
     this.taskPrioritizationMode = taskPrioritizationMode;
   }
 
@@ -60,29 +81,55 @@ export class TaskQueue extends TaskQueueBase {
       }
     });
 
-    return this.promiseQueues[bestQueueIndex];
+    const promiseQueue = this.promiseQueues[bestQueueIndex];
+    return promiseQueue.length >= this.promiseQueueCapacity
+      ? null
+      : promiseQueue;
+  }
+
+  protected _pushTaskToWaitingQueue(task: WaitedTask) {
+    if (task.priority === 'normal') {
+      this.tasksWaitingQueue.push(task);
+      this._log(`Pushed task ${task.taskId} to waiting queue`);
+    } else {
+      this.prioritizedTasksWaitingQueue.push(task);
+      this._log(`Pushed task ${task.taskId} to prioritized waiting queue`);
+    }
   }
 
   /** @internal */
   protected _getNextTask() {
+    // First consider the prioritized waiting queue
+    const queue = this.prioritizedTasksWaitingQueue.length
+      ? this.prioritizedTasksWaitingQueue
+      : this.tasksWaitingQueue;
+
     switch (this.taskPrioritizationMode) {
       case 'head': {
-        return this.tasksWaitingQueue.shift();
+        return queue.shift();
       }
 
       case 'head-with-truncation': {
-        const nextTask = this.tasksWaitingQueue.shift();
-        this.tasksWaitingQueue = [];
+        const nextTask = queue.shift();
+        if (this.prioritizedTasksWaitingQueue.length) {
+          this.prioritizedTasksWaitingQueue = [];
+        } else {
+          this.tasksWaitingQueue = [];
+        }
         return nextTask;
       }
 
       case 'tail': {
-        return this.tasksWaitingQueue.pop();
+        return queue.pop();
       }
 
       case 'tail-with-truncation': {
-        const nextTask = this.tasksWaitingQueue.pop();
-        this.tasksWaitingQueue = [];
+        const nextTask = queue.pop();
+        if (this.prioritizedTasksWaitingQueue.length) {
+          this.prioritizedTasksWaitingQueue = [];
+        } else {
+          this.tasksWaitingQueue = [];
+        }
         return nextTask;
       }
 
@@ -95,8 +142,22 @@ export class TaskQueue extends TaskQueueBase {
   }
 
   /** @internal */
-  protected _shouldStop(): boolean {
-    return this.stopped;
+  protected _shouldStop(task: Task): boolean {
+    // If the current task has error and the queue should stop on error, or queue should stop, do not continue the execution
+    if (task.error && this.stopOnError) {
+      this.failedRetryableTaskQueue.push(task);
+      this._log(
+        `Stopped queue due to the error ${task.error} from the task ${task.taskId}`,
+      );
+      return true;
+    }
+
+    if (this.stopped) {
+      this._log(`Stopped queue as it should stop`);
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -145,6 +206,7 @@ export class TaskQueue extends TaskQueueBase {
         createdAt: new Date().getTime(),
         status: 'idle',
         onStatusUpdate,
+        priority: 'normal',
       });
     } else {
       return this._addTask({
@@ -153,6 +215,67 @@ export class TaskQueue extends TaskQueueBase {
         createdAt: new Date().getTime(),
         status: 'idle',
         onStatusUpdate: taskIdOrOnStatusUpdate,
+        priority: 'normal',
+      });
+    }
+  }
+
+  /**
+   * Add a task with callback function to the prioritized queue
+   * @param callback The callback function of the task
+   */
+  addPrioritizedTask<ReturnType>(
+    callback: () => ReturnType | Promise<ReturnType>,
+  ): Promise<ReturnType>;
+
+  /**
+   * Add a task with callback function to the prioritized queue
+   * @param callback The callback function of the task
+   * @param onStatusUpdate The callback function to subscribe task status changes
+   */
+  addPrioritizedTask<ReturnType>(
+    callback: () => ReturnType | Promise<ReturnType>,
+    onStatusUpdate?: TaskStatusUpdateHandler<ReturnType>,
+  ): Promise<ReturnType>;
+
+  /**
+   * Add a task with callback function to the prioritized queue
+   * @param callback The callback function of the task
+   * @param taskId The ID of the task
+   * @param onStatusUpdate The callback function to subscribe task status changes
+   */
+  addPrioritizedTask<ReturnType>(
+    callback: () => ReturnType | Promise<ReturnType>,
+    taskId?: TaskId | undefined,
+    onStatusUpdate?: TaskStatusUpdateHandler<ReturnType>,
+  ): Promise<ReturnType>;
+
+  /** @internal */
+  async addPrioritizedTask<ReturnType>(
+    callback: () => ReturnType | Promise<ReturnType>,
+    taskIdOrOnStatusUpdate?: TaskId | TaskStatusUpdateHandler<ReturnType>,
+    onStatusUpdate?: TaskStatusUpdateHandler<ReturnType>,
+  ): Promise<ReturnType> {
+    if (
+      isTaskId(taskIdOrOnStatusUpdate) ||
+      taskIdOrOnStatusUpdate === undefined
+    ) {
+      return this._addTask({
+        taskId: taskIdOrOnStatusUpdate ?? getTaskId(),
+        callback,
+        createdAt: new Date().getTime(),
+        status: 'idle',
+        onStatusUpdate,
+        priority: 'important',
+      });
+    } else {
+      return this._addTask({
+        taskId: getTaskId(),
+        callback,
+        createdAt: new Date().getTime(),
+        status: 'idle',
+        onStatusUpdate: taskIdOrOnStatusUpdate,
+        priority: 'important',
       });
     }
   }
@@ -248,13 +371,7 @@ export class TaskQueue extends TaskQueueBase {
    */
   clearWaitedTasks() {
     this.tasksWaitingQueue = [];
-  }
-
-  /**
-   * Stop the queue execution
-   */
-  stop() {
-    this.stopped = true;
+    this.prioritizedTasksWaitingQueue = [];
   }
 
   /**
@@ -268,6 +385,34 @@ export class TaskQueue extends TaskQueueBase {
       const task = this.tasksWaitingQueue.shift();
       if (task) {
         this._addTask(task);
+      }
+    }
+  }
+
+  /**
+   * Stop the queue execution
+   */
+  stop() {
+    this.stopped = true;
+  }
+
+  /**
+   * Retry running the queue with failed tasks
+   */
+  retry() {
+    while (this.failedRetryableTaskQueue.length) {
+      const task = this.failedRetryableTaskQueue.shift();
+
+      if (task) {
+        this._addTask({
+          ...task,
+          // Reset important properties for the failed tasks
+          result: undefined,
+          error: undefined,
+          status: 'idle',
+          // To keep the original execution order, the failed tasks should have higher priority
+          priority: 'important',
+        });
       }
     }
   }

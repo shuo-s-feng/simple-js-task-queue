@@ -34,11 +34,16 @@ export type TaskPrioritizationMode =
   | 'head-with-truncation'
   | 'tail-with-truncation';
 /**
+ * Task priority
+ */
+export type TaskPriority = 'normal' | 'important';
+/**
  * The task object
  */
 export interface Task<ReturnType = any> {
   taskId: TaskId;
   status: TaskStatus;
+  priority: TaskPriority;
   callback: () => ReturnType | Promise<ReturnType>;
   onStatusUpdate?: TaskStatusUpdateHandler<ReturnType>;
   createdAt: number;
