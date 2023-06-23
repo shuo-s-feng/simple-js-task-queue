@@ -1,6 +1,6 @@
 {
   "name": "simple-js-task-queue",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "A simple javascript/typesciprt tasks queue that supports concurrency control",
   "keywords": [
     "task",
