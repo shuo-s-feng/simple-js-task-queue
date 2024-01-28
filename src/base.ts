@@ -46,6 +46,8 @@ export class TaskQueueBase extends TaskQueueCore {
   /** @internal */
   protected stopOnError: boolean;
   /** @internal */
+  protected retrying: boolean = false;
+  /** @internal */
   protected stopped: boolean = false;
   /** @internal */
   protected promiseQueueCapacity: number = PROMISE_QUEUE_CAPACITY;
@@ -107,10 +109,18 @@ export class TaskQueueBase extends TaskQueueCore {
 
   /** @internal */
   protected _getNextTask() {
-    // First consider the prioritized waiting queue
-    const queue = this.prioritizedTasksWaitingQueue.length
-      ? this.prioritizedTasksWaitingQueue
-      : this.tasksWaitingQueue;
+    let queue: Array<Task>;
+    if (this.retrying && this.failedRetryableTaskQueue.length) {
+      queue = this.failedRetryableTaskQueue;
+    } else if (this.prioritizedTasksWaitingQueue.length) {
+      queue = this.prioritizedTasksWaitingQueue;
+    } else {
+      queue = this.tasksWaitingQueue;
+    }
+
+    if (this.retrying && !this.failedRetryableTaskQueue.length) {
+      this.retrying = false;
+    }
 
     switch (this.taskPrioritizationMode) {
       case 'head': {
@@ -119,9 +129,9 @@ export class TaskQueueBase extends TaskQueueCore {
 
       case 'head-with-truncation': {
         const nextTask = queue.shift();
-        if (this.prioritizedTasksWaitingQueue.length) {
+        if (queue === this.prioritizedTasksWaitingQueue) {
           this.prioritizedTasksWaitingQueue = [];
-        } else {
+        } else if (queue === this.tasksWaitingQueue) {
           this.tasksWaitingQueue = [];
         }
         return nextTask;
@@ -133,9 +143,9 @@ export class TaskQueueBase extends TaskQueueCore {
 
       case 'tail-with-truncation': {
         const nextTask = queue.pop();
-        if (this.prioritizedTasksWaitingQueue.length) {
+        if (queue === this.prioritizedTasksWaitingQueue) {
           this.prioritizedTasksWaitingQueue = [];
-        } else {
+        } else if (queue === this.tasksWaitingQueue) {
           this.tasksWaitingQueue = [];
         }
         return nextTask;
@@ -200,13 +210,9 @@ export class TaskQueueBase extends TaskQueueCore {
    */
   start() {
     this.stopped = false;
-
-    while (this.tasksWaitingQueue.length) {
-      // Keep the original task orders and let the queue decide the next task to be executed later
-      const task = this.tasksWaitingQueue.shift();
-      if (task) {
-        this._addTask(task);
-      }
+    const task = this._getNextTask();
+    if (task) {
+      this._addTask(task);
     }
   }
 
@@ -221,20 +227,10 @@ export class TaskQueueBase extends TaskQueueCore {
    * Retry running the queue with failed tasks
    */
   retry() {
-    while (this.failedRetryableTaskQueue.length) {
-      const task = this.failedRetryableTaskQueue.shift();
-
-      if (task) {
-        this._addTask({
-          ...task,
-          // Reset important properties for the failed tasks
-          result: undefined,
-          error: undefined,
-          status: 'idle',
-          // To keep the original execution order, the failed tasks should have higher priority
-          priority: 'important',
-        });
-      }
+    this.retrying = true;
+    const task = this._getNextTask();
+    if (task) {
+      this._addTask(task);
     }
   }
 }

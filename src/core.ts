@@ -87,7 +87,7 @@ export abstract class TaskQueueCore {
   /** @internal */
   protected abstract _pushTaskToWaitingQueue(task: Task): void;
   /** @internal */
-  protected abstract _getNextTask(): WaitedTask | undefined | null;
+  protected abstract _getNextTask(): Task | undefined | null;
   /** @internal */
   protected abstract _shouldStop(task: Task): boolean;
 
@@ -149,9 +149,28 @@ export abstract class TaskQueueCore {
   }
 
   /** @internal */
+  protected _cleanTask<TaskType extends Task | WaitedTask>(
+    task: TaskType,
+  ): TaskType {
+    task.status = 'idle';
+    task.queueId = undefined;
+    task.result = undefined;
+    task.error = undefined;
+    task.runAt = undefined;
+    task.finishedAt = undefined;
+
+    return task;
+  }
+
+  /** @internal */
   protected _addTask<ReturnType>(
     task: Task<ReturnType> | WaitedTask<ReturnType>,
+    withTaskClean: boolean = true,
   ) {
+    if (withTaskClean) {
+      this._cleanTask(task);
+    }
+
     this._log(
       {
         level: 'info',
