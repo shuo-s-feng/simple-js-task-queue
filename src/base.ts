@@ -1,309 +1,241 @@
-import { ILogger, LoggerMethodNames, logger as defaultLogger } from './logger';
+import TaskQueueCore, { TaskQueueCoreProps } from './core';
 import {
-  PromiseQueue,
-  WaitedTask,
-  Resolve,
-  Reject,
-  isWaitedTask,
-  TaskStatusUpdateHandler,
-  TaskId,
   Task,
-  TaskStatus,
+  TaskId,
+  TaskPrioritizationMode,
+  TaskStatusUpdateHandler,
+  WaitedTask,
 } from './type';
 
-export interface TaskQueueBaseProps {
+const PROMISE_QUEUE_CAPACITY = 1;
+
+export interface TaskQueueBaseProps extends TaskQueueCoreProps {
   /**
-   * The logger instance
-   * @default The default logger
-   */
-  logger?: ILogger;
-  /**
-   * If true, print console logs of the task queue execution details
+   * If true, getTask() and getAllTasks() will be available to retrieve task details.
    * @default false
    */
-  verbose?: boolean;
+  memorizeTasks?: boolean;
   /**
-   * Maximum number of the concurrent running tasks
-   * @default 1
+   * If true, the error of executing the tasks will stop the queue execution.
+   * @default true
    */
-  concurrency?: number;
+  stopOnError?: boolean;
   /**
-   * If true, the error of executing the tasks will be returned (resolved to the returning promise)
-   * @default false
+   * Pending task prioritization mode. It affects how the task queue picks the next task to be executed.
+   * Please note, the task queue will auto execute the tasks whenever given, the first task will always be executed first no matter which priority mode is selected.
+   *
+   * @augments head - Pick the first task in the waited queue
+   *
+   * @augments tail - Pick the last task in the waited queue
+   *
+   * @augments head-with-truncation - Pick the first task in the waited queue and clear the waited queue
+   *
+   * @augments tail-with-truncation - Pick the last task in the waited queue and clear the waited queue
    */
-  returnError?: boolean;
-  /**
-   * Listener for task status updates. Please note, only one listener is allowed
-   */
-  onTaskStatusUpdate?: TaskStatusUpdateHandler;
+  taskPrioritizationMode?: TaskPrioritizationMode;
 }
 
 /**
- * Base abstract class for task queue, which is only responsible for serialized tasks execution and
- * should not expose any public methods
+ * Base task queue with concurrency control.
+ * By default, all added tasks will be auto scheduled and executed.
+ * You can use stop() and start() to control the execution.
  */
-export abstract class TaskQueueBase {
+export class TaskQueueBase extends TaskQueueCore {
   /** @internal */
-  protected logger: ILogger;
+  protected memorizeTasks: boolean;
   /** @internal */
-  private verbose: boolean;
+  protected stopOnError: boolean;
   /** @internal */
-  private returnError: boolean;
+  protected stopped: boolean = false;
   /** @internal */
-  protected promiseQueues: Array<PromiseQueue> = [];
+  protected promiseQueueCapacity: number = PROMISE_QUEUE_CAPACITY;
   /** @internal */
-  protected onTaskStatusUpdate: TaskStatusUpdateHandler | undefined = undefined;
+  protected taskPrioritizationMode: TaskPrioritizationMode;
+  /** @internal */
+  protected tasksWaitingQueue: Array<WaitedTask> = [];
+  /** @internal */
+  protected prioritizedTasksWaitingQueue: Array<WaitedTask> = [];
+  /** @internal */
+  protected failedRetryableTaskQueue: Array<Task> = [];
+  /** @internal */
+  protected taskLookup: Record<TaskId, Task> = {};
 
   constructor({
-    logger = defaultLogger,
-    verbose = false,
-    concurrency = 1,
-    returnError = false,
-    onTaskStatusUpdate,
+    memorizeTasks = false,
+    stopOnError = true,
+    taskPrioritizationMode = 'head',
+    ...rest
   }: TaskQueueBaseProps = {}) {
-    if (concurrency < 1) {
-      throw Error(`Invalid concurrency ${concurrency}`);
-    }
+    super(rest);
 
-    this.logger = logger;
-    this.verbose = verbose;
-    this.returnError = returnError;
-    this.onTaskStatusUpdate = onTaskStatusUpdate;
-
-    this.promiseQueues = new Array(concurrency).fill(null).map((_, index) => ({
-      queueId: index,
-      promise: Promise.resolve(),
-      length: 0,
-      taskIds: [],
-    }));
+    this.memorizeTasks = memorizeTasks;
+    this.stopOnError = stopOnError;
+    this.taskPrioritizationMode = taskPrioritizationMode;
   }
 
   /** @internal */
-  protected abstract _getAvailablePromiseQueue():
-    | PromiseQueue
-    | undefined
-    | null;
-  /** @internal */
-  protected abstract _pushTaskToWaitingQueue(task: Task): void;
-  /** @internal */
-  protected abstract _getNextTask(): WaitedTask | undefined | null;
-  /** @internal */
-  protected abstract _shouldStop(task: Task): boolean;
-
-  /** @internal */
-  protected _log(
-    config: {
-      level: LoggerMethodNames;
-      taskId?: TaskId;
-    },
-    ...messages: Array<any>
-  ) {
-    if (this.verbose) {
-      if (config.taskId) {
-        this.logger[config.level](`Task ${config.taskId} |`, ...messages);
-      } else {
-        this.logger[config.level](`Global |`, ...messages);
-      }
-    }
-  }
-
-  /** @internal */
-  private _updateTaskStatus(task: Task, status: TaskStatus) {
-    task.status = status;
-    task.onStatusUpdate?.(status, task);
-    this.onTaskStatusUpdate?.(status, task);
-  }
-
-  /** @internal */
-  private async _runTask<ReturnType>(
-    task: Task<ReturnType>,
-    resolve: Resolve<ReturnType>,
-    reject: Reject,
-  ) {
-    try {
-      if (task.status === 'idle') {
-        task.runAt = new Date().getTime();
-        this._updateTaskStatus(task, 'running');
-
-        const result = await task.callback();
-        resolve(result);
-
-        task.result = result;
-        this._updateTaskStatus(task, 'success');
-        task.finishedAt = new Date().getTime();
-      } else {
-        throw Error(`Task ${task.taskId} is already triggered`);
-      }
-    } catch (error: any) {
-      task.error = error;
-      this._updateTaskStatus(task, 'error');
-
-      if (this.returnError) {
-        resolve(error);
-      } else {
-        reject(error);
-      }
-    }
-  }
-
-  /** @internal */
-  protected _addTask<ReturnType>(
-    task: Task<ReturnType> | WaitedTask<ReturnType>,
-  ) {
-    this._log(
-      {
-        level: 'info',
-        taskId: task.taskId,
-      },
-      'Processing task:',
-      task,
+  protected _getAvailablePromiseQueue() {
+    // Find any queue whose load is under capacity
+    return (
+      this.promiseQueues.find(
+        (queue) => queue.length < this.promiseQueueCapacity,
+      ) ?? null
     );
+  }
 
-    const _isWaitedTask = isWaitedTask(task);
-    this._log(
-      {
-        level: 'info',
-        taskId: task.taskId,
-      },
-      `Task ${task.taskId} is a ${
-        _isWaitedTask ? 'waited task' : 'normal task'
-      }`,
-    );
-
-    // The waited task already has the resolve function
-    let _resolve: Resolve<ReturnType>;
-    let _reject: Reject;
-    if (_isWaitedTask) {
-      _resolve = task.resolve;
-      _reject = task.reject;
+  protected _pushTaskToWaitingQueue(task: WaitedTask) {
+    if (task.priority === 'normal') {
+      this.tasksWaitingQueue.push(task);
+      this._log(
+        {
+          level: 'info',
+          taskId: task.taskId,
+        },
+        `Pushed task ${task.taskId} to waiting queue`,
+      );
+    } else {
+      this.prioritizedTasksWaitingQueue.push(task);
+      this._log(
+        {
+          level: 'info',
+          taskId: task.taskId,
+        },
+        `Pushed task ${task.taskId} to prioritized waiting queue`,
+      );
     }
+  }
 
-    // The waited task already has the promise
-    const _promise: Promise<ReturnType> = _isWaitedTask
-      ? task.promise
-      : new Promise((resolve, reject) => {
-          _resolve = resolve;
-          _reject = reject;
-        });
+  /** @internal */
+  protected _getNextTask() {
+    // First consider the prioritized waiting queue
+    const queue = this.prioritizedTasksWaitingQueue.length
+      ? this.prioritizedTasksWaitingQueue
+      : this.tasksWaitingQueue;
 
-    const promiseQueue = this._getAvailablePromiseQueue();
-    this._log(
-      {
-        level: 'info',
-        taskId: task.taskId,
-      },
-      'Get available promise queue:',
-      promiseQueue,
-    );
+    switch (this.taskPrioritizationMode) {
+      case 'head': {
+        return queue.shift();
+      }
 
-    // If there is no available promise queue or we should stop the execution, append the task to the waiting queue
-    if (!promiseQueue || this._shouldStop(task)) {
-      Promise.resolve().then(() => {
-        // Directly modify the existing task instance to keep the task reference (for the inherited class)
-        (task as WaitedTask).resolve = _resolve;
-        (task as WaitedTask).reject = _reject;
-        (task as WaitedTask).promise = _promise;
-
-        this._pushTaskToWaitingQueue(task);
-      });
-    }
-
-    // If there is an available promise queue, append the task to it
-    else {
-      promiseQueue.length += 1;
-      promiseQueue.taskIds.push(task.taskId);
-      task.queueId = promiseQueue.queueId;
-
-      const resolveTask = (
-        resultType: 'result' | 'error',
-        result: ReturnType | Error,
-        resolve: Resolve<ReturnType> | Reject,
-      ) => {
-        promiseQueue.length -= 1;
-        promiseQueue.taskIds.shift();
-
-        resolve(result as any);
-
-        if (resultType === 'result') {
-          this._log(
-            {
-              level: 'info',
-              taskId: task.taskId,
-            },
-            `Resolved task ${task.taskId} with result ${result}`,
-          );
+      case 'head-with-truncation': {
+        const nextTask = queue.shift();
+        if (this.prioritizedTasksWaitingQueue.length) {
+          this.prioritizedTasksWaitingQueue = [];
         } else {
-          this._log(
-            {
-              level: 'error',
-              taskId: task.taskId,
-            },
-            `Resolved task ${task.taskId} with error ${result}`,
-          );
+          this.tasksWaitingQueue = [];
         }
+        return nextTask;
+      }
 
-        // If stopped, directly return to skip the execution of next task
-        if (this._shouldStop(task)) {
-          return;
+      case 'tail': {
+        return queue.pop();
+      }
+
+      case 'tail-with-truncation': {
+        const nextTask = queue.pop();
+        if (this.prioritizedTasksWaitingQueue.length) {
+          this.prioritizedTasksWaitingQueue = [];
+        } else {
+          this.tasksWaitingQueue = [];
         }
+        return nextTask;
+      }
 
-        // Get and re-add the first task from the waiting queue after the previous "Promise.resolve().then()" finishes appending tasks to the waiting queue
-        Promise.resolve().then(() => {
-          const nextTask = this._getNextTask();
-          if (nextTask) {
-            this._log(
-              {
-                level: 'info',
-                taskId: task.taskId,
-              },
-              `Picked the next task ${nextTask.taskId} to continue execution`,
-            );
-
-            this._addTask(nextTask);
-          } else {
-            this._log(
-              {
-                level: 'info',
-                taskId: task.taskId,
-              },
-              `No more task to continue execution`,
-            );
-          }
-        });
-      };
-
-      const runTask = () => {
-        this._log(
-          {
-            level: 'info',
-            taskId: task.taskId,
-          },
-          `Running task ${task.taskId}`,
+      default: {
+        throw Error(
+          `Invalid task priority mode ${this.taskPrioritizationMode}`,
         );
+      }
+    }
+  }
 
-        return this._runTask(
-          task,
-          (result) => {
-            resolveTask('result', result, _resolve);
-          },
-          (error) => {
-            resolveTask('error', error, _reject);
-          },
-        );
-      };
-
-      // Keep running tasks no matter the previous task is resolved or rejected
-      // NOTE: You do not need to change this for most cases
-      promiseQueue.promise.then(runTask).catch(runTask);
-
-      // Append the promise to the promise queue to serialize async task executions
-      // NOTE: You do not need to change this for most cases
-      promiseQueue.promise = _promise;
+  /** @internal */
+  protected _shouldStop(task: Task): boolean {
+    // If the current task has error and the queue should stop on error,
+    // or queue should stop, do not continue the execution.
+    if (task.error && this.stopOnError) {
+      this.failedRetryableTaskQueue.push(task);
+      this._log(
+        {
+          level: 'info',
+          taskId: task.taskId,
+        },
+        `Stopped queue due to the error ${task.error} from the task ${task.taskId}`,
+      );
+      return true;
     }
 
-    // Return the result from the original callback function of the task
-    // NOTE: You do not need to change this for most cases
-    return _promise;
+    if (this.stopped) {
+      this._log(
+        {
+          level: 'info',
+          taskId: task.taskId,
+        },
+        `Stopped queue as it should stop`,
+      );
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Subscribe to the task status chagnes
+   * @param onTaskStatusUpdate The listener for task status updates
+   */
+  subscribeTaskStatusChange(onTaskStatusUpdate: TaskStatusUpdateHandler) {
+    this.onTaskStatusUpdate = onTaskStatusUpdate;
+  }
+
+  /**
+   * Clear all waited tasks from the queue
+   */
+  clearWaitedTasks() {
+    this.tasksWaitingQueue = [];
+    this.prioritizedTasksWaitingQueue = [];
+  }
+
+  /**
+   * Start the queue execution
+   */
+  start() {
+    this.stopped = false;
+
+    while (this.tasksWaitingQueue.length) {
+      // Keep the original task orders and let the queue decide the next task to be executed later
+      const task = this.tasksWaitingQueue.shift();
+      if (task) {
+        this._addTask(task);
+      }
+    }
+  }
+
+  /**
+   * Stop the queue execution
+   */
+  stop() {
+    this.stopped = true;
+  }
+
+  /**
+   * Retry running the queue with failed tasks
+   */
+  retry() {
+    while (this.failedRetryableTaskQueue.length) {
+      const task = this.failedRetryableTaskQueue.shift();
+
+      if (task) {
+        this._addTask({
+          ...task,
+          // Reset important properties for the failed tasks
+          result: undefined,
+          error: undefined,
+          status: 'idle',
+          // To keep the original execution order, the failed tasks should have higher priority
+          priority: 'important',
+        });
+      }
+    }
   }
 }
 
