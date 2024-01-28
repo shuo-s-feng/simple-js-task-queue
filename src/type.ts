@@ -90,3 +90,6 @@ export const isWaitedTask = (obj: any): obj is WaitedTask => {
   }
   return false;
 };
+
+// Conditional type to check if a type is a function
+export type IfFunction<T, U> = T extends (...args: any[]) => any ? U : never;

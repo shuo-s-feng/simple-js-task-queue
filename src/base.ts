@@ -1,3 +1,4 @@
+import { ILogger, LoggerMethodNames, logger as defaultLogger } from './logger';
 import {
   PromiseQueue,
   WaitedTask,
@@ -11,6 +12,11 @@ import {
 } from './type';
 
 export interface TaskQueueBaseProps {
+  /**
+   * The logger instance
+   * @default The default logger
+   */
+  logger?: ILogger;
   /**
    * If true, print console logs of the task queue execution details
    * @default false
@@ -38,17 +44,18 @@ export interface TaskQueueBaseProps {
  */
 export abstract class TaskQueueBase {
   /** @internal */
+  protected logger: ILogger;
+  /** @internal */
   private verbose: boolean;
   /** @internal */
   private returnError: boolean;
   /** @internal */
   protected promiseQueues: Array<PromiseQueue> = [];
   /** @internal */
-  protected taskLookup: Record<TaskId, Task> = {};
-  /** @internal */
   protected onTaskStatusUpdate: TaskStatusUpdateHandler | undefined = undefined;
 
   constructor({
+    logger = defaultLogger,
     verbose = false,
     concurrency = 1,
     returnError = false,
@@ -58,6 +65,7 @@ export abstract class TaskQueueBase {
       throw Error(`Invalid concurrency ${concurrency}`);
     }
 
+    this.logger = logger;
     this.verbose = verbose;
     this.returnError = returnError;
     this.onTaskStatusUpdate = onTaskStatusUpdate;
@@ -83,9 +91,19 @@ export abstract class TaskQueueBase {
   protected abstract _shouldStop(task: Task): boolean;
 
   /** @internal */
-  protected _log(...data: Array<any>) {
+  protected _log(
+    config: {
+      level: LoggerMethodNames;
+      taskId?: TaskId;
+    },
+    ...messages: Array<any>
+  ) {
     if (this.verbose) {
-      console.log(...data);
+      if (config.taskId) {
+        this.logger[config.level](`Task ${config.taskId} |`, ...messages);
+      } else {
+        this.logger[config.level](`Global |`, ...messages);
+      }
     }
   }
 
@@ -132,9 +150,25 @@ export abstract class TaskQueueBase {
   protected _addTask<ReturnType>(
     task: Task<ReturnType> | WaitedTask<ReturnType>,
   ) {
-    this._log('Processing task:\n', task);
+    this._log(
+      {
+        level: 'info',
+        taskId: task.taskId,
+      },
+      'Processing task:',
+      task,
+    );
 
     const _isWaitedTask = isWaitedTask(task);
+    this._log(
+      {
+        level: 'info',
+        taskId: task.taskId,
+      },
+      `Task ${task.taskId} is a ${
+        _isWaitedTask ? 'waited task' : 'normal task'
+      }`,
+    );
 
     // The waited task already has the resolve function
     let _resolve: Resolve<ReturnType>;
@@ -153,17 +187,24 @@ export abstract class TaskQueueBase {
         });
 
     const promiseQueue = this._getAvailablePromiseQueue();
-    this._log('Get promise queue:\n', promiseQueue);
+    this._log(
+      {
+        level: 'info',
+        taskId: task.taskId,
+      },
+      'Get available promise queue:',
+      promiseQueue,
+    );
 
     // If there is no available promise queue or we should stop the execution, append the task to the waiting queue
     if (!promiseQueue || this._shouldStop(task)) {
       Promise.resolve().then(() => {
-        this._pushTaskToWaitingQueue({
-          ...task,
-          resolve: _resolve,
-          reject: _reject,
-          promise: _promise,
-        } as WaitedTask);
+        // Directly modify the existing task instance to keep the task reference (for the inherited class)
+        (task as WaitedTask).resolve = _resolve;
+        (task as WaitedTask).reject = _reject;
+        (task as WaitedTask).promise = _promise;
+
+        this._pushTaskToWaitingQueue(task);
       });
     }
 
@@ -174,6 +215,7 @@ export abstract class TaskQueueBase {
       task.queueId = promiseQueue.queueId;
 
       const resolveTask = (
+        resultType: 'result' | 'error',
         result: ReturnType | Error,
         resolve: Resolve<ReturnType> | Reject,
       ) => {
@@ -181,9 +223,24 @@ export abstract class TaskQueueBase {
         promiseQueue.taskIds.shift();
 
         resolve(result as any);
-        this._log(
-          `Resolved task ${task.taskId} with result or error ${result}`,
-        );
+
+        if (resultType === 'result') {
+          this._log(
+            {
+              level: 'info',
+              taskId: task.taskId,
+            },
+            `Resolved task ${task.taskId} with result ${result}`,
+          );
+        } else {
+          this._log(
+            {
+              level: 'error',
+              taskId: task.taskId,
+            },
+            `Resolved task ${task.taskId} with error ${result}`,
+          );
+        }
 
         // If stopped, directly return to skip the execution of next task
         if (this._shouldStop(task)) {
@@ -194,24 +251,43 @@ export abstract class TaskQueueBase {
         Promise.resolve().then(() => {
           const nextTask = this._getNextTask();
           if (nextTask) {
-            this._addTask(nextTask);
             this._log(
+              {
+                level: 'info',
+                taskId: task.taskId,
+              },
               `Picked the next task ${nextTask.taskId} to continue execution`,
+            );
+
+            this._addTask(nextTask);
+          } else {
+            this._log(
+              {
+                level: 'info',
+                taskId: task.taskId,
+              },
+              `No more task to continue execution`,
             );
           }
         });
       };
 
       const runTask = () => {
-        this._log(`Running task ${task.taskId}`);
+        this._log(
+          {
+            level: 'info',
+            taskId: task.taskId,
+          },
+          `Running task ${task.taskId}`,
+        );
 
         return this._runTask(
           task,
           (result) => {
-            resolveTask(result, _resolve);
+            resolveTask('result', result, _resolve);
           },
           (error) => {
-            resolveTask(error, _reject);
+            resolveTask('error', error, _reject);
           },
         );
       };

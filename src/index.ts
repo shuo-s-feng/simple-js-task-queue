@@ -66,6 +66,8 @@ export class TaskQueue extends TaskQueueBase {
   protected prioritizedTasksWaitingQueue: Array<WaitedTask> = [];
   /** @internal */
   protected failedRetryableTaskQueue: Array<Task> = [];
+  /** @internal */
+  protected taskLookup: Record<TaskId, Task> = {};
 
   constructor({
     memorizeTasks = false,
@@ -100,10 +102,22 @@ export class TaskQueue extends TaskQueueBase {
   protected _pushTaskToWaitingQueue(task: WaitedTask) {
     if (task.priority === 'normal') {
       this.tasksWaitingQueue.push(task);
-      this._log(`Pushed task ${task.taskId} to waiting queue`);
+      this._log(
+        {
+          level: 'info',
+          taskId: task.taskId,
+        },
+        `Pushed task ${task.taskId} to waiting queue`,
+      );
     } else {
       this.prioritizedTasksWaitingQueue.push(task);
-      this._log(`Pushed task ${task.taskId} to prioritized waiting queue`);
+      this._log(
+        {
+          level: 'info',
+          taskId: task.taskId,
+        },
+        `Pushed task ${task.taskId} to prioritized waiting queue`,
+      );
     }
   }
 
@@ -157,13 +171,23 @@ export class TaskQueue extends TaskQueueBase {
     if (task.error && this.stopOnError) {
       this.failedRetryableTaskQueue.push(task);
       this._log(
+        {
+          level: 'info',
+          taskId: task.taskId,
+        },
         `Stopped queue due to the error ${task.error} from the task ${task.taskId}`,
       );
       return true;
     }
 
     if (this.stopped) {
-      this._log(`Stopped queue as it should stop`);
+      this._log(
+        {
+          level: 'info',
+          taskId: task.taskId,
+        },
+        `Stopped queue as it should stop`,
+      );
       return true;
     }
 
