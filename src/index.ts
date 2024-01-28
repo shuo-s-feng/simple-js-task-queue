@@ -3,6 +3,7 @@ import {
   Task,
   TaskId,
   TaskPrioritizationMode,
+  TaskPriority,
   TaskStatus,
   TaskStatusUpdateHandler,
   WaitedTask,
@@ -20,6 +21,11 @@ export type {
 const PROMISE_QUEUE_CAPACITY = 1;
 
 export interface TaskQueueProps extends TaskQueueBaseProps {
+  /**
+   * If true, getTask() and getAllTasks() will be available to retrieve task details
+   * @default false
+   */
+  memorizeTasks?: boolean;
   /**
    * If true, the error of executing the tasks will stop the queue execution
    * @default true
@@ -45,6 +51,8 @@ export interface TaskQueueProps extends TaskQueueBaseProps {
  */
 export class TaskQueue extends TaskQueueBase {
   /** @internal */
+  private memorizeTasks: boolean;
+  /** @internal */
   private stopOnError: boolean;
   /** @internal */
   private stopped: boolean = false;
@@ -60,12 +68,14 @@ export class TaskQueue extends TaskQueueBase {
   protected failedRetryableTaskQueue: Array<Task> = [];
 
   constructor({
+    memorizeTasks = false,
     stopOnError = true,
     taskPrioritizationMode = 'head',
     ...rest
   }: TaskQueueProps = {}) {
     super(rest);
 
+    this.memorizeTasks = memorizeTasks;
     this.stopOnError = stopOnError;
     this.taskPrioritizationMode = taskPrioritizationMode;
   }
@@ -160,6 +170,30 @@ export class TaskQueue extends TaskQueueBase {
     return false;
   }
 
+  createTask<ReturnType>(
+    callback: () => ReturnType | Promise<ReturnType>,
+    taskId?: TaskId,
+    onStatusUpdate?: TaskStatusUpdateHandler<ReturnType>,
+    priority: TaskPriority = 'normal',
+  ) {
+    const finalTaskId = taskId ?? getTaskId();
+
+    const task = {
+      taskId: finalTaskId,
+      callback,
+      createdAt: new Date().getTime(),
+      status: 'idle' as TaskStatus,
+      onStatusUpdate,
+      priority,
+    };
+
+    if (this.memorizeTasks) {
+      this.taskLookup[finalTaskId] = task;
+    }
+
+    return task;
+  }
+
   /**
    * Add a task with callback function to the queue
    * @param callback The callback function of the task
@@ -200,23 +234,13 @@ export class TaskQueue extends TaskQueueBase {
       isTaskId(taskIdOrOnStatusUpdate) ||
       taskIdOrOnStatusUpdate === undefined
     ) {
-      return this._addTask({
-        taskId: taskIdOrOnStatusUpdate ?? getTaskId(),
-        callback,
-        createdAt: new Date().getTime(),
-        status: 'idle',
-        onStatusUpdate,
-        priority: 'normal',
-      });
+      return this._addTask(
+        this.createTask(callback, taskIdOrOnStatusUpdate, onStatusUpdate),
+      );
     } else {
-      return this._addTask({
-        taskId: getTaskId(),
-        callback,
-        createdAt: new Date().getTime(),
-        status: 'idle',
-        onStatusUpdate: taskIdOrOnStatusUpdate,
-        priority: 'normal',
-      });
+      return this._addTask(
+        this.createTask(callback, undefined, taskIdOrOnStatusUpdate),
+      );
     }
   }
 

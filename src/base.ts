@@ -27,11 +27,6 @@ export interface TaskQueueBaseProps {
    */
   returnError?: boolean;
   /**
-   * If true, getTask() and getAllTasks() will be available to retrieve task details
-   * @default false
-   */
-  memorizeTasks?: boolean;
-  /**
    * Listener for task status updates. Please note, only one listener is allowed
    */
   onTaskStatusUpdate?: TaskStatusUpdateHandler;
@@ -47,8 +42,6 @@ export abstract class TaskQueueBase {
   /** @internal */
   private returnError: boolean;
   /** @internal */
-  protected memorizeTasks: boolean;
-  /** @internal */
   protected promiseQueues: Array<PromiseQueue> = [];
   /** @internal */
   protected taskLookup: Record<TaskId, Task> = {};
@@ -59,7 +52,6 @@ export abstract class TaskQueueBase {
     verbose = false,
     concurrency = 1,
     returnError = false,
-    memorizeTasks = false,
     onTaskStatusUpdate,
   }: TaskQueueBaseProps = {}) {
     if (concurrency < 1) {
@@ -68,7 +60,6 @@ export abstract class TaskQueueBase {
 
     this.verbose = verbose;
     this.returnError = returnError;
-    this.memorizeTasks = memorizeTasks;
     this.onTaskStatusUpdate = onTaskStatusUpdate;
 
     this.promiseQueues = new Array(concurrency).fill(null).map((_, index) => ({
@@ -142,10 +133,6 @@ export abstract class TaskQueueBase {
     task: Task<ReturnType> | WaitedTask<ReturnType>,
   ) {
     this._log('Processing task:\n', task);
-
-    if (this.memorizeTasks) {
-      this.taskLookup[task.taskId] = task;
-    }
 
     const _isWaitedTask = isWaitedTask(task);
 
