@@ -1,5 +1,12 @@
 import TaskQueueBase, { TaskQueueBaseProps } from './base';
-import { TaskId, TaskStatus, TaskStatusUpdateHandler, isTaskId } from './type';
+import { MessageHub } from './message-hub';
+import {
+  TaskId,
+  TaskPriority,
+  TaskStatus,
+  TaskStatusUpdateHandler,
+  isTaskId,
+} from './type';
 import { getTaskId } from './utils';
 export type {
   TaskId,
@@ -9,6 +16,8 @@ export type {
   Task,
 } from './type';
 
+export const MESSAGE_HUB_KEY = 'task-queue';
+
 export interface TaskQueueProps extends TaskQueueBaseProps {}
 
 /**
@@ -17,16 +26,33 @@ export interface TaskQueueProps extends TaskQueueBaseProps {}
  * execution.
  */
 export class TaskQueue extends TaskQueueBase {
+  private messageHub: MessageHub;
+
   constructor(props: TaskQueueProps = {}) {
     super(props);
+
+    this.messageHub = new MessageHub();
+
+    this.onTaskStatusUpdate = (status, task) => {
+      this.messageHub.publish(MESSAGE_HUB_KEY, status, task);
+    };
   }
 
   /**
-   * Subscribe to the task status chagnes.
+   * Subscribe to the task status changes.
    * @param onTaskStatusUpdate The listener for task status updates
    */
   subscribeTaskStatusChange(onTaskStatusUpdate: TaskStatusUpdateHandler) {
-    this.onTaskStatusUpdate = onTaskStatusUpdate;
+    this.messageHub.subscribe(MESSAGE_HUB_KEY, onTaskStatusUpdate);
+    return () => this.unsubscribeTaskStatusChange(onTaskStatusUpdate);
+  }
+
+  /**
+   * Unsubscribe from the task status changes.
+   * @param onTaskStatusUpdate The listener for task status updates
+   */
+  unsubscribeTaskStatusChange(onTaskStatusUpdate: TaskStatusUpdateHandler) {
+    this.messageHub.unsubscribe(MESSAGE_HUB_KEY, onTaskStatusUpdate);
   }
 
   /**
@@ -153,11 +179,14 @@ export class TaskQueue extends TaskQueueBase {
       callback: () => unknown;
       taskId?: TaskId;
       onStatusUpdate?: TaskStatusUpdateHandler<unknown>;
+      priority?: TaskPriority;
     }>,
   ) {
     return Promise.all(
       tasks.map((task) =>
-        this.addTask(
+        (task.priority === 'important'
+          ? this.addPrioritizedTask
+          : this.addTask)(
           task.callback,
           task.taskId ?? getTaskId(),
           task.onStatusUpdate,
