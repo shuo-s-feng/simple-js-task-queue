@@ -16,6 +16,7 @@ module.exports = {
     'no-unused-vars': 'off',
     '@typescript-eslint/no-unused-vars': 'warn',
     'no-mixed-spaces-and-tabs': 'off',
+    'max-len': ['error', { code: 80, comments: 80, ignoreUrls: true }],
   },
   overrides: [
     {

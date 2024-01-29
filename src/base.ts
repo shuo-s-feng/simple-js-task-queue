@@ -3,48 +3,62 @@ import {
   Task,
   TaskId,
   TaskPrioritizationMode,
+  TaskPriority,
+  TaskStatus,
   TaskStatusUpdateHandler,
   WaitedTask,
 } from './type';
+import { getTaskId } from './utils';
 
 const PROMISE_QUEUE_CAPACITY = 1;
 
 export interface TaskQueueBaseProps extends TaskQueueCoreProps {
   /**
-   * If true, getTask() and getAllTasks() will be available to retrieve task details.
+   * Toggle of making getTask() and getAllTasks() available to use.
+   * task details.
    * @default false
    */
   memorizeTasks?: boolean;
   /**
-   * If true, the error of executing the tasks will stop the queue execution.
+   * Toggle of error during task execution stopping the queue.
    * @default true
    */
   stopOnError?: boolean;
   /**
-   * Pending task prioritization mode. It affects how the task queue picks the next task to be executed.
-   * Please note, the task queue will auto execute the tasks whenever given, the first task will always be executed first no matter which priority mode is selected.
+   * Toggle of using default incremental task id
+   * @default true
+   */
+  defaultIncrementalTaskId?: boolean;
+  /**
+   * Pending task prioritization mode. It affects how the task queue
+   * picks the next task to be executed.
+   * Please note, the task queue will auto execute the tasks whenever given,
+   * the first task will always be executed first no matter which priority
+   * mode is selected.
    *
    * @augments head - Pick the first task in the waited queue
    *
    * @augments tail - Pick the last task in the waited queue
    *
-   * @augments head-with-truncation - Pick the first task in the waited queue and clear the waited queue
+   * @augments head-with-truncation - Pick the first task in the waited queue
+   * and clear the waited queue
    *
-   * @augments tail-with-truncation - Pick the last task in the waited queue and clear the waited queue
+   * @augments tail-with-truncation - Pick the last task in the waited queue
+   * and clear the waited queue
    */
   taskPrioritizationMode?: TaskPrioritizationMode;
 }
 
 /**
- * Base task queue with concurrency control.
- * By default, all added tasks will be auto scheduled and executed.
- * You can use stop() and start() to control the execution.
+ * Base task queue with abstract methods implementation and base public methods.
  */
 export class TaskQueueBase extends TaskQueueCore {
   /** @internal */
   protected memorizeTasks: boolean;
   /** @internal */
   protected stopOnError: boolean;
+  /** @internal */
+  protected defaultIncrementalTaskId: boolean;
   /** @internal */
   protected retrying: boolean = false;
   /** @internal */
@@ -65,6 +79,7 @@ export class TaskQueueBase extends TaskQueueCore {
   constructor({
     memorizeTasks = false,
     stopOnError = true,
+    defaultIncrementalTaskId = true,
     taskPrioritizationMode = 'head',
     ...rest
   }: TaskQueueBaseProps = {}) {
@@ -72,6 +87,7 @@ export class TaskQueueBase extends TaskQueueCore {
 
     this.memorizeTasks = memorizeTasks;
     this.stopOnError = stopOnError;
+    this.defaultIncrementalTaskId = defaultIncrementalTaskId;
     this.taskPrioritizationMode = taskPrioritizationMode;
   }
 
@@ -85,6 +101,7 @@ export class TaskQueueBase extends TaskQueueCore {
     );
   }
 
+  /** @internal */
   protected _pushTaskToWaitingQueue(task: WaitedTask) {
     if (task.priority === 'normal') {
       this.tasksWaitingQueue.push(task);
@@ -110,14 +127,26 @@ export class TaskQueueBase extends TaskQueueCore {
   /** @internal */
   protected _getNextTask() {
     let queue: Array<Task>;
+    // If the queue instance is retrying the failed retryable tasks, then it
+    // should first consider the failed retryable task queue
     if (this.retrying && this.failedRetryableTaskQueue.length) {
       queue = this.failedRetryableTaskQueue;
-    } else if (this.prioritizedTasksWaitingQueue.length) {
+    }
+
+    // Otherwise (not retrying or retrying while the failed retryable task
+    // queue is empty), then first consider the prioritized task waiting queue
+    else if (this.prioritizedTasksWaitingQueue.length) {
       queue = this.prioritizedTasksWaitingQueue;
-    } else {
+    }
+
+    // Otherwise (neither failed retryable task queue nor prioritized task
+    // waiting queue is available), then consider the normal task waiting queue
+    else {
       queue = this.tasksWaitingQueue;
     }
 
+    // If the queue instance is retrying while there is no failed retryable
+    // task queue, mark the queue as not retrying
     if (this.retrying && !this.failedRetryableTaskQueue.length) {
       this.retrying = false;
     }
@@ -129,11 +158,14 @@ export class TaskQueueBase extends TaskQueueCore {
 
       case 'head-with-truncation': {
         const nextTask = queue.shift();
+
+        // Clear the prioritized and normal task waiting queue
         if (queue === this.prioritizedTasksWaitingQueue) {
           this.prioritizedTasksWaitingQueue = [];
         } else if (queue === this.tasksWaitingQueue) {
           this.tasksWaitingQueue = [];
         }
+
         return nextTask;
       }
 
@@ -143,11 +175,14 @@ export class TaskQueueBase extends TaskQueueCore {
 
       case 'tail-with-truncation': {
         const nextTask = queue.pop();
+
+        // Clear the prioritized and normal task waiting queue
         if (queue === this.prioritizedTasksWaitingQueue) {
           this.prioritizedTasksWaitingQueue = [];
         } else if (queue === this.tasksWaitingQueue) {
           this.tasksWaitingQueue = [];
         }
+
         return nextTask;
       }
 
@@ -170,7 +205,8 @@ export class TaskQueueBase extends TaskQueueCore {
           level: 'info',
           taskId: task.taskId,
         },
-        `Stopped queue due to the error ${task.error} from the task ${task.taskId}`,
+        `Stopped queue due to the error ${task.error} from the task \
+        ${task.taskId}`,
       );
       return true;
     }
@@ -189,20 +225,29 @@ export class TaskQueueBase extends TaskQueueCore {
     return false;
   }
 
-  /**
-   * Subscribe to the task status chagnes
-   * @param onTaskStatusUpdate The listener for task status updates
-   */
-  subscribeTaskStatusChange(onTaskStatusUpdate: TaskStatusUpdateHandler) {
-    this.onTaskStatusUpdate = onTaskStatusUpdate;
-  }
+  /** @internal */
+  protected _createTask<ReturnType>(
+    callback: () => ReturnType | Promise<ReturnType>,
+    taskId?: TaskId,
+    onStatusUpdate?: TaskStatusUpdateHandler<ReturnType>,
+    priority: TaskPriority = 'normal',
+  ) {
+    const finalTaskId = taskId ?? getTaskId(this.defaultIncrementalTaskId);
 
-  /**
-   * Clear all waited tasks from the queue
-   */
-  clearWaitedTasks() {
-    this.tasksWaitingQueue = [];
-    this.prioritizedTasksWaitingQueue = [];
+    const task = {
+      taskId: finalTaskId,
+      callback,
+      createdAt: new Date().getTime(),
+      status: 'idle' as TaskStatus,
+      onStatusUpdate,
+      priority,
+    };
+
+    if (this.memorizeTasks) {
+      this.taskLookup[finalTaskId] = task;
+    }
+
+    return task;
   }
 
   /**
@@ -228,6 +273,7 @@ export class TaskQueueBase extends TaskQueueCore {
    */
   retry() {
     this.retrying = true;
+    this.stopped = false;
     const task = this._getNextTask();
     if (task) {
       this._addTask(task);

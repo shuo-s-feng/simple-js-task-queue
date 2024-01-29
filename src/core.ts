@@ -40,8 +40,8 @@ export interface TaskQueueCoreProps {
 }
 
 /**
- * Core abstract class for task queue, which is only responsible for serialized tasks execution and
- * should not expose any public methods.
+ * Core abstract class for task queue, which is only responsible for serialized
+ * tasks execution and should not expose any public methods.
  */
 export abstract class TaskQueueCore {
   /** @internal */
@@ -217,10 +217,12 @@ export abstract class TaskQueueCore {
       promiseQueue,
     );
 
-    // If there is no available promise queue or we should stop the execution, append the task to the waiting queue
+    // If there is no available promise queue or we should stop the execution,
+    // append the task to the waiting queue
     if (!promiseQueue || this._shouldStop(task)) {
       Promise.resolve().then(() => {
-        // Directly modify the existing task instance to keep the task reference (for the inherited class)
+        // Directly modify the existing task instance to keep the task reference
+        // (for the inherited class)
         (task as WaitedTask).resolve = _resolve;
         (task as WaitedTask).reject = _reject;
         (task as WaitedTask).promise = _promise;
@@ -260,7 +262,9 @@ export abstract class TaskQueueCore {
           return;
         }
 
-        // Get and re-add the first task from the waiting queue after the previous "Promise.resolve().then()" finishes appending tasks to the waiting queue
+        // Get and re-add the first task from the waiting queue after the
+        // previous "Promise.resolve().then()" finishes appending tasks to
+        // the waiting queue
         Promise.resolve().then(() => {
           const nextTask = this._getNextTask();
 
@@ -310,7 +314,8 @@ export abstract class TaskQueueCore {
       // NOTE: You do not need to change this for most cases
       promiseQueue.promise.then(runTask).catch(runTask);
 
-      // Append the promise to the promise queue to serialize async task executions
+      // Append the promise to the promise queue to serialize async task
+      // executions
       // NOTE: You do not need to change this for most cases
       promiseQueue.promise = _promise;
     }

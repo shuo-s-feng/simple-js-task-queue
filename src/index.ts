@@ -1,11 +1,5 @@
 import TaskQueueBase, { TaskQueueBaseProps } from './base';
-import {
-  TaskId,
-  TaskPriority,
-  TaskStatus,
-  TaskStatusUpdateHandler,
-  isTaskId,
-} from './type';
+import { TaskId, TaskStatus, TaskStatusUpdateHandler, isTaskId } from './type';
 import { getTaskId } from './utils';
 export type {
   TaskId,
@@ -18,39 +12,25 @@ export type {
 export interface TaskQueueProps extends TaskQueueBaseProps {}
 
 /**
- * Task queue with concurrency control. By default, all added tasks will be auto scheduled and executed. You can use stop() and start() to control the execution
+ * Task queue with concurrency control. By default, all added tasks will be auto
+ * scheduled and executed. You can use stop() and start() to control the
+ * execution.
  */
 export class TaskQueue extends TaskQueueBase {
   constructor(props: TaskQueueProps = {}) {
     super(props);
   }
 
-  createTask<ReturnType>(
-    callback: () => ReturnType | Promise<ReturnType>,
-    taskId?: TaskId,
-    onStatusUpdate?: TaskStatusUpdateHandler<ReturnType>,
-    priority: TaskPriority = 'normal',
-  ) {
-    const finalTaskId = taskId ?? getTaskId();
-
-    const task = {
-      taskId: finalTaskId,
-      callback,
-      createdAt: new Date().getTime(),
-      status: 'idle' as TaskStatus,
-      onStatusUpdate,
-      priority,
-    };
-
-    if (this.memorizeTasks) {
-      this.taskLookup[finalTaskId] = task;
-    }
-
-    return task;
+  /**
+   * Subscribe to the task status chagnes.
+   * @param onTaskStatusUpdate The listener for task status updates
+   */
+  subscribeTaskStatusChange(onTaskStatusUpdate: TaskStatusUpdateHandler) {
+    this.onTaskStatusUpdate = onTaskStatusUpdate;
   }
 
   /**
-   * Add a task with callback function to the queue
+   * Add a task with callback function to the queue.
    * @param callback The callback function of the task
    */
   addTask<ReturnType>(
@@ -58,9 +38,10 @@ export class TaskQueue extends TaskQueueBase {
   ): Promise<ReturnType>;
 
   /**
-   * Add a task with callback function to the queue
+   * Add a task with callback function to the queue.
    * @param callback The callback function of the task
-   * @param onStatusUpdate The callback function to subscribe task status changes
+   * @param onStatusUpdate The callback function to subscribe task status
+   * changes
    */
   addTask<ReturnType>(
     callback: () => ReturnType | Promise<ReturnType>,
@@ -68,10 +49,11 @@ export class TaskQueue extends TaskQueueBase {
   ): Promise<ReturnType>;
 
   /**
-   * Add a task with callback function to the queue
+   * Add a task with callback function to the queue.
    * @param callback The callback function of the task
    * @param taskId The ID of the task
-   * @param onStatusUpdate The callback function to subscribe task status changes
+   * @param onStatusUpdate The callback function to subscribe task status
+   * changes
    */
   addTask<ReturnType>(
     callback: () => ReturnType | Promise<ReturnType>,
@@ -90,17 +72,17 @@ export class TaskQueue extends TaskQueueBase {
       taskIdOrOnStatusUpdate === undefined
     ) {
       return this._addTask(
-        this.createTask(callback, taskIdOrOnStatusUpdate, onStatusUpdate),
+        this._createTask(callback, taskIdOrOnStatusUpdate, onStatusUpdate),
       );
     } else {
       return this._addTask(
-        this.createTask(callback, undefined, taskIdOrOnStatusUpdate),
+        this._createTask(callback, undefined, taskIdOrOnStatusUpdate),
       );
     }
   }
 
   /**
-   * Add a task with callback function to the prioritized queue
+   * Add a task with callback function to the prioritized queue.
    * @param callback The callback function of the task
    */
   addPrioritizedTask<ReturnType>(
@@ -108,9 +90,10 @@ export class TaskQueue extends TaskQueueBase {
   ): Promise<ReturnType>;
 
   /**
-   * Add a task with callback function to the prioritized queue
+   * Add a task with callback function to the prioritized queue.
    * @param callback The callback function of the task
-   * @param onStatusUpdate The callback function to subscribe task status changes
+   * @param onStatusUpdate The callback function to subscribe task status
+   * changes
    */
   addPrioritizedTask<ReturnType>(
     callback: () => ReturnType | Promise<ReturnType>,
@@ -118,10 +101,11 @@ export class TaskQueue extends TaskQueueBase {
   ): Promise<ReturnType>;
 
   /**
-   * Add a task with callback function to the prioritized queue
+   * Add a task with callback function to the prioritized queue.
    * @param callback The callback function of the task
    * @param taskId The ID of the task
-   * @param onStatusUpdate The callback function to subscribe task status changes
+   * @param onStatusUpdate The callback function to subscribe task status
+   * changes
    */
   addPrioritizedTask<ReturnType>(
     callback: () => ReturnType | Promise<ReturnType>,
@@ -139,29 +123,30 @@ export class TaskQueue extends TaskQueueBase {
       isTaskId(taskIdOrOnStatusUpdate) ||
       taskIdOrOnStatusUpdate === undefined
     ) {
-      return this._addTask({
-        taskId: taskIdOrOnStatusUpdate ?? getTaskId(),
-        callback,
-        createdAt: new Date().getTime(),
-        status: 'idle',
-        onStatusUpdate,
-        priority: 'important',
-      });
+      return this._addTask(
+        this._createTask(
+          callback,
+          taskIdOrOnStatusUpdate,
+          onStatusUpdate,
+          'important',
+        ),
+      );
     } else {
-      return this._addTask({
-        taskId: getTaskId(),
-        callback,
-        createdAt: new Date().getTime(),
-        status: 'idle',
-        onStatusUpdate: taskIdOrOnStatusUpdate,
-        priority: 'important',
-      });
+      return this._addTask(
+        this._createTask(
+          callback,
+          undefined,
+          taskIdOrOnStatusUpdate,
+          'important',
+        ),
+      );
     }
   }
 
   /**
-   * Add tasks with callback functions to the queue
-   * @param tasks The array of tasks with callback functions, IDs, and task status changes subscriber
+   * Add tasks with callback functions to the queue.
+   * @param tasks The array of tasks with callback functions, IDs, and task
+   * status changes subscriber
    */
   async addTasks(
     tasks: Array<{
@@ -181,17 +166,33 @@ export class TaskQueue extends TaskQueueBase {
     );
   }
 
+  /**
+   * Clear all waited tasks from the queue
+   */
+  clearWaitedTasks() {
+    this.tasksWaitingQueue = [];
+    this.prioritizedTasksWaitingQueue = [];
+  }
+
+  /**
+   * Clear all failed retryable tasks from the queue
+   */
+  clearFailedRetryableTasks() {
+    this.failedRetryableTaskQueue = [];
+  }
+
   /** @internal */
   private _assertMemorizingTasksEnabled() {
     if (!this.memorizeTasks) {
       throw Error(
-        'Memorizing task details is not enabled. Please update the memorizeTasks configuration when initializing the queue instance',
+        'Memorizing task details is not enabled. Please update the \
+        memorizeTasks configuration when initializing the queue instance',
       );
     }
   }
 
   /**
-   * Get the task details with task ID
+   * Get the task details with task ID.
    * @param taskId The ID of the task
    */
   getTaskDetails(taskId: TaskId) {
@@ -201,7 +202,7 @@ export class TaskQueue extends TaskQueueBase {
   }
 
   /**
-   * Get all task details with matching status
+   * Get all task details with matching status.
    * @param status The matched status or array of statuses
    */
   getAllTasksDetails(status?: TaskStatus | Array<TaskStatus>) {
@@ -219,7 +220,7 @@ export class TaskQueue extends TaskQueueBase {
   }
 
   /**
-   * Clear the task details with task ID
+   * Clear the task details with task ID.
    * @param taskId The ID of the task
    */
   clearTaskDetails(taskId: TaskId) {
@@ -229,7 +230,7 @@ export class TaskQueue extends TaskQueueBase {
   }
 
   /**
-   * Clear all task details
+   * Clear all task details.
    */
   clearAllTasksDetails() {
     this._assertMemorizingTasksEnabled();
