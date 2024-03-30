@@ -1,6 +1,7 @@
 import TaskQueueBase, { TaskQueueBaseProps } from './base';
 import { MessageHub } from './message-hub';
 import {
+  Task,
   TaskId,
   TaskPriority,
   TaskStatus,
@@ -210,10 +211,44 @@ export class TaskQueue extends TaskQueueBase {
   }
 
   /**
+   * Remove the task from waited task queue.
+   * @param taskIdOrTask The ID of the task or task object
+   */
+  removeWaitedTask(taskIdOrTask: TaskId | Task) {
+    const taskId =
+      typeof taskIdOrTask === 'string' || typeof taskIdOrTask === 'number'
+        ? taskIdOrTask
+        : taskIdOrTask.taskId;
+
+    this.tasksWaitingQueue = this.tasksWaitingQueue.filter(
+      (task) => task.taskId !== taskId,
+    );
+    this.prioritizedTasksWaitingQueue =
+      this.prioritizedTasksWaitingQueue.filter(
+        (task) => task.taskId !== taskId,
+      );
+  }
+
+  /**
    * Clear all failed retryable tasks from the queue.
    */
   clearFailedRetryableTasks() {
     this.failedRetryableTaskQueue = [];
+  }
+
+  /**
+   * Remove the task from failed retryable task queue.
+   * @param taskIdOrTask The ID of the task or task object
+   */
+  removeFailedRetryableTask(taskIdOrTask: TaskId | Task) {
+    const taskId =
+      typeof taskIdOrTask === 'string' || typeof taskIdOrTask === 'number'
+        ? taskIdOrTask
+        : taskIdOrTask.taskId;
+
+    this.failedRetryableTaskQueue = this.failedRetryableTaskQueue.filter(
+      (task) => task.taskId !== taskId,
+    );
   }
 
   /** @internal */
