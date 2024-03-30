@@ -10,8 +10,11 @@
 ## Table of Contents
 
 - [Introduction](#introduction)
+- [Features](#features)
 - [Installation](#installation)
-- [Example](#example)
+- [Demo](#demo)
+- [Usage](#usage)
+- [API Reference](#api-reference)
 - [License](#license)
 
 ## Introduction
@@ -91,7 +94,7 @@ The `TaskQueue` class is at the core of the library, offering a rich set of meth
 - **`removeFailedRetryableTask(taskIdOrTask)`**: Removes a specific task from the retry list.
 - **`removeWaitedTask(taskId)`**: Removes a specific task from the waiting list.
 
-For more detailed information on each method, including parameter types and return values, please refer to the TypeDoc generated documentation in the `docs` folder.
+For more detailed information on each method, including parameter types and return values, please refer to the TypeDoc generated documentation in the `docs` folder or [this link](https://shuo-s-feng.github.io/simple-js-task-queue/).
 
 ## License
 
