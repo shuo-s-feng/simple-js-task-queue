@@ -1,6 +1,6 @@
 {
   "name": "simple-js-task-queue",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "description": "A simple javascript/typesciprt tasks queue that supports concurrency control",
   "keywords": [
     "task",
@@ -22,14 +22,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Sup-Friday/simple-js-task-queue.git"
+    "url": "git+https://github.com/shuo-s-feng/simple-js-task-queue.git"
   },
   "author": "Shuo Feng",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/Sup-Friday/simple-js-task-queue/issues"
+    "url": "https://github.com/shuo-s-feng/simple-js-task-queue/issues"
   },
-  "homepage": "https://github.com/Sup-Friday/simple-js-task-queue#readme",
+  "homepage": "https://github.com/shuo-s-feng/simple-js-task-queue#readme",
   "devDependencies": {
     "@babel/preset-env": "^7.20.2",
     "@babel/preset-typescript": "^7.18.6",
