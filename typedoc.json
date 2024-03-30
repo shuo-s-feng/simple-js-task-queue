@@ -1,0 +1,7 @@
+{
+  "name": "simple-js-task-queue",
+  "$schema": "https://typedoc.org/schema.json",
+  "out": "docs",
+  "entryPoints": ["./src/index.ts"],
+  "gitRemote": "https://github.com/shuo-s-feng/simple-js-task-queue"
+}

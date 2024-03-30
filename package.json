@@ -18,7 +18,7 @@
     "lint": "eslint .",
     "clean": "(rm -rf ./dist || true) && (rm -rf ./coverage || true) && (rm -rf yarn-error.log || true) && (rm -rf yarn.lock || true)",
     "clean:all": "npm run clean && (rm -rf node_modules || true)",
-    "doc": "typedoc --out docs src"
+    "doc": "typedoc"
   },
   "repository": {
     "type": "git",
