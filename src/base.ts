@@ -289,6 +289,13 @@ export class TaskQueueBase extends TaskQueueCore {
       }
     }
   }
+
+  /**
+   * Check if the queue is stopped.
+   */
+  isStopped(): boolean {
+    return this.stopped;
+  }
 }
 
 export default TaskQueueBase;

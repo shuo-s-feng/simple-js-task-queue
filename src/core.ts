@@ -44,13 +44,14 @@ export interface TaskQueueCoreProps {
  * tasks execution and concurrency dynamic adjustment.
  */
 export abstract class TaskQueueCore {
+  /** @internal */
   private currentQueueId: number = 0;
   /** @internal */
   protected logger: ILogger;
   /** @internal */
   private verbose: boolean;
   /** @internal */
-  public concurrency: number;
+  protected concurrency: number;
   /** @internal */
   private returnError: boolean;
   /** @internal */
@@ -197,6 +198,13 @@ export abstract class TaskQueueCore {
         `Adjusted concurrency from ${oldConcurrency} to ${newConcurrency}`,
       );
     }
+  }
+
+  /**
+   * Get the current concurrency of the queue
+   */
+  public getConcurrency(): number {
+    return this.concurrency;
   }
 
   /** @internal */
