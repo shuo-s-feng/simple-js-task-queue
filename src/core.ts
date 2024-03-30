@@ -41,13 +41,16 @@ export interface TaskQueueCoreProps {
 
 /**
  * Core abstract class for task queue, which is only responsible for serialized
- * tasks execution and should not expose any public methods.
+ * tasks execution and concurrency dynamic adjustment.
  */
 export abstract class TaskQueueCore {
+  private currentQueueId: number = 0;
   /** @internal */
   protected logger: ILogger;
   /** @internal */
   private verbose: boolean;
+  /** @internal */
+  public concurrency: number;
   /** @internal */
   private returnError: boolean;
   /** @internal */
@@ -62,21 +65,13 @@ export abstract class TaskQueueCore {
     returnError = false,
     onTaskStatusUpdate,
   }: TaskQueueCoreProps = {}) {
-    if (concurrency < 1) {
-      throw Error(`Invalid concurrency ${concurrency}`);
-    }
-
     this.logger = logger;
     this.verbose = verbose;
+    this.concurrency = concurrency;
     this.returnError = returnError;
     this.onTaskStatusUpdate = onTaskStatusUpdate;
 
-    this.promiseQueues = new Array(concurrency).fill(null).map((_, index) => ({
-      queueId: index,
-      promise: Promise.resolve(),
-      length: 0,
-      taskIds: [],
-    }));
+    this.promiseQueues = this._initPromiseQueues(concurrency);
   }
 
   /** @internal */
@@ -89,7 +84,120 @@ export abstract class TaskQueueCore {
   /** @internal */
   protected abstract _getNextTask(): Task | undefined | null;
   /** @internal */
-  protected abstract _shouldStop(task: Task): boolean;
+  protected abstract _shouldStop(task?: Task): boolean;
+
+  /** @internal */
+  private _initPromiseQueues(concurrency: number): Array<PromiseQueue> {
+    if (concurrency < 1) {
+      throw new Error('Concurrency must be at least 1');
+    }
+
+    return new Array(concurrency).fill(null).map(() => ({
+      queueId: this.currentQueueId++,
+      promise: Promise.resolve(),
+      length: 0,
+      taskIds: [],
+    }));
+  }
+
+  /**
+   * Adjust the concurrency.
+   * @param newConcurrency The new concurrency
+   * @param taskBalancingStrategy The existing running task balancing strategy
+   */
+  public adjustConcurrency(
+    newConcurrency: number,
+    taskBalancingStrategy: 'round-robin' = 'round-robin',
+  ): void {
+    if (newConcurrency !== this.concurrency) {
+      const oldConcurrency = this.concurrency;
+      this.concurrency = newConcurrency;
+
+      this._log(
+        { level: 'info' },
+        `Adjusting concurrency from ${oldConcurrency} to ${newConcurrency}`,
+      );
+
+      const newPromiseQueue = this._initPromiseQueues(newConcurrency);
+
+      // Lookup from new queue index to old queues
+      let newQueueIndexToOldQueuesLookup: Record<
+        number,
+        Array<Omit<PromiseQueue, 'queueId'>>
+      > = {};
+
+      if (taskBalancingStrategy === 'round-robin') {
+        this.promiseQueues.forEach((queue, index) => {
+          const newQueueIndex = index % newConcurrency;
+
+          if (!newQueueIndexToOldQueuesLookup[newQueueIndex]) {
+            newQueueIndexToOldQueuesLookup[newQueueIndex] = [queue];
+          } else {
+            newQueueIndexToOldQueuesLookup[newQueueIndex].push(queue);
+          }
+        });
+      } else {
+        throw new Error(
+          `Unknown task balancing strategy ${taskBalancingStrategy}`,
+        );
+      }
+
+      // Based on the lookup from new queue index to old queues, re-assign the
+      // tasks from old queues to new queues
+      newPromiseQueue.forEach((queue, index) => {
+        // Update the task ids of the new queue from all the tasks from the
+        // corresponding old queues
+        queue.taskIds = newQueueIndexToOldQueuesLookup[index]
+          ? newQueueIndexToOldQueuesLookup[index].reduce((total, current) => {
+              return [...total, ...current.taskIds];
+            }, [] as Array<TaskId>)
+          : [];
+
+        // Update the task lengh of the new queue
+        queue.length = queue.taskIds.length;
+
+        // Update the promise of the new queue
+        queue.promise = newQueueIndexToOldQueuesLookup[index]
+          ? Promise.all(
+              newQueueIndexToOldQueuesLookup[index].map(
+                (oldQueue) => oldQueue.promise,
+              ),
+            )
+          : Promise.resolve();
+
+        // Let the new queue be the parent queue of all old queues
+        newQueueIndexToOldQueuesLookup[index]?.forEach(
+          (oldQueue) => (oldQueue.parentQueue = queue),
+        );
+      });
+
+      // Update the promise queues
+      this.promiseQueues = newPromiseQueue;
+
+      // If the new concurrency is greater than the old one, add new tasks to
+      // fully leverage the whole concurrency capacity
+      if (oldConcurrency < newConcurrency && !this._shouldStop()) {
+        for (let i = 0; i < newConcurrency - oldConcurrency; i++) {
+          const task = this._getNextTask();
+
+          if (task) {
+            this._log(
+              { level: 'info' },
+              `Adding task ${task.taskId} to the queue due to extra 
+              concurrency`,
+            );
+
+            this._addTask(task);
+          }
+        }
+      }
+
+      this._log(
+        { level: 'info' },
+        `Adjusted concurrency from ${oldConcurrency} to ${newConcurrency}`,
+      );
+    }
+  }
 
   /** @internal */
   protected _log(
@@ -103,7 +211,7 @@ export abstract class TaskQueueCore {
       if (config.taskId) {
         this.logger[config.level](`Task ${config.taskId} |`, ...messages);
       } else {
-        this.logger[config.level](`Global |`, ...messages);
+        this.logger[config.level](...messages);
       }
     }
   }
@@ -235,6 +343,16 @@ export abstract class TaskQueueCore {
     else {
       promiseQueue.length += 1;
       promiseQueue.taskIds.push(task.taskId);
+
+      // Update the length and task ids for all the parent queues
+      let currentParentQueue = promiseQueue.parentQueue;
+      while (currentParentQueue) {
+        currentParentQueue.length += 1;
+        currentParentQueue.taskIds.push(task.taskId);
+
+        currentParentQueue = currentParentQueue.parentQueue;
+      }
+
       task.queueId = promiseQueue.queueId;
 
       const resolveTask = (
@@ -244,6 +362,20 @@ export abstract class TaskQueueCore {
       ) => {
         promiseQueue.length -= 1;
         promiseQueue.taskIds.shift();
+
+        // Update the length and task ids for all the parent queues
+        let currentParentQueue = promiseQueue.parentQueue;
+        let farestParentQueue = promiseQueue.parentQueue;
+        while (currentParentQueue) {
+          currentParentQueue.length -= 1;
+          currentParentQueue.taskIds.shift();
+
+          currentParentQueue = currentParentQueue.parentQueue;
+
+          if (currentParentQueue) {
+            farestParentQueue = currentParentQueue;
+          }
+        }
 
         resolve(result as any);
 
@@ -256,6 +388,36 @@ export abstract class TaskQueueCore {
             ? `Resolved task ${task.taskId} with result ${result}`
             : `Rejected task ${task.taskId} with error ${result}`,
         );
+
+        this._log(
+          { level: 'info' },
+          'promiseQueue.taskIds',
+          promiseQueue.taskIds,
+        );
+
+        // If the current queue has a parent queue with tasks assigned,
+        // then this queue should stop and let the parent queue continue
+        // execution
+        //
+        // Cases that the above conditions are met:
+        // 1. Multiple queues are assigned to the parent queue due to
+        // concurrency adjustment (this queue should stop)
+        //
+        // ----------------------------------------------------------------
+        //
+        // If the current queue has a parent queue without task assigned,
+        // then this queue should continue
+        //
+        // Cases that the above conditions are met:
+        // 1. Only this queue is assigned to the parent queue due to
+        //    concurrency adjustment, where the parent queue also rely
+        //    on this queue to continue execution (this queue should continue)
+        if (farestParentQueue && farestParentQueue.taskIds.length > 0) {
+          // TODO: Might need to clean up all deprecated queues to have good
+          // states
+
+          return;
+        }
 
         // If stopped, directly return to skip the execution of next task
         if (this._shouldStop(task)) {

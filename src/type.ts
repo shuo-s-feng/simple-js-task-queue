@@ -38,6 +38,10 @@ export type TaskPrioritizationMode =
  */
 export type TaskPriority = 'normal' | 'important';
 /**
+ * Conditional type to check if a type is a function
+ */
+export type IfFunction<T, U> = T extends (...args: any[]) => any ? U : never;
+/**
  * The task object
  */
 export interface Task<ReturnType = any> {
@@ -69,6 +73,7 @@ export interface PromiseQueue {
   promise: Promise<any>;
   length: number;
   taskIds: Array<TaskId>;
+  parentQueue?: PromiseQueue | undefined | null;
 }
 /**
  * Check if the given object is TaskId
@@ -90,6 +95,3 @@ export const isWaitedTask = (obj: any): obj is WaitedTask => {
   }
   return false;
 };
-
-// Conditional type to check if a type is a function
-export type IfFunction<T, U> = T extends (...args: any[]) => any ? U : never;

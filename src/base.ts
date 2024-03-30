@@ -14,37 +14,38 @@ const PROMISE_QUEUE_CAPACITY = 1;
 
 export interface TaskQueueBaseProps extends TaskQueueCoreProps {
   /**
-   * Toggle of making getTask() and getAllTasks() available to use.
-   * task details.
+   * Toggle to make getTask() and getAllTasks() available to retrieve task
+   * details.
    * @default false
    */
   memorizeTasks?: boolean;
   /**
-   * Toggle of error during task execution stopping the queue.
+   * Toggle to stop the queue when error happens during task execution.
    * @default true
    */
   stopOnError?: boolean;
   /**
-   * Toggle of using default incremental task id
+   * Toggle to use default incremental task id.
    * @default true
    */
   defaultIncrementalTaskId?: boolean;
   /**
    * Pending task prioritization mode. It affects how the task queue
    * picks the next task to be executed.
-   * Please note, the task queue will auto execute the tasks whenever given,
-   * the first task will always be executed first no matter which priority
-   * mode is selected.
    *
-   * @augments head - Pick the first task in the waited queue
+   * @augments head - Pick the first task in the waiting queue
    *
-   * @augments tail - Pick the last task in the waited queue
+   * @augments tail - Pick the last task in the waiting queue
    *
-   * @augments head-with-truncation - Pick the first task in the waited queue
-   * and clear the waited queue
+   * @augments head-with-truncation - Pick the first task in the waiting queue
+   * and clear the corresponding waiting queue. If the picked task is in the
+   * normal waiting queue, then only the normal queue will be cleared; same
+   * thing happens to the prioritized waiting queue
    *
-   * @augments tail-with-truncation - Pick the last task in the waited queue
-   * and clear the waited queue
+   * @augments tail-with-truncation - Pick the last task in the waiting queue
+   * and clear the corresponding waiting queue. If the picked task is in the
+   * normal waiting queue, then only the normal queue will be cleared; same
+   * thing happens to the prioritized waiting queue
    */
   taskPrioritizationMode?: TaskPrioritizationMode;
 }
@@ -195,10 +196,11 @@ export class TaskQueueBase extends TaskQueueCore {
   }
 
   /** @internal */
-  protected _shouldStop(task: Task): boolean {
-    // If the current task has error and the queue should stop on error,
-    // or queue should stop, do not continue the execution.
-    if (task.error && this.stopOnError) {
+  protected _shouldStop(task?: Task): boolean {
+    // If the current task has error and the queue should stop on error, then
+    // stop the queue and push the failed task to the failed retryable task
+    // queue
+    if (task?.error && this.stopOnError) {
       this.failedRetryableTaskQueue.push(task);
       this._log(
         {
@@ -211,11 +213,12 @@ export class TaskQueueBase extends TaskQueueCore {
       return true;
     }
 
+    // If the task queue should stop, then stop the queue
     if (this.stopped) {
       this._log(
         {
           level: 'info',
-          taskId: task.taskId,
+          taskId: task?.taskId,
         },
         `Stopped queue as it should stop`,
       );
@@ -251,32 +254,39 @@ export class TaskQueueBase extends TaskQueueCore {
   }
 
   /**
-   * Start the queue execution
+   * Start the queue execution.
    */
   start() {
     this.stopped = false;
-    const task = this._getNextTask();
-    if (task) {
-      this._addTask(task);
+    for (let i = 0; i < this.concurrency; i++) {
+      const task = this._getNextTask();
+      if (task) {
+        this._addTask(task);
+      }
     }
   }
 
   /**
-   * Stop the queue execution
+   * Stop the queue execution.
+   * Please note, the current ongoing task will not be stopped immediately.
    */
   stop() {
     this.stopped = true;
   }
 
   /**
-   * Retry running the queue with failed tasks
+   * Retry running the queue with failed tasks.
+   * Please note, this method will be effective only when marking "stopOnError"
+   * as "true" for the queue.
    */
   retry() {
     this.retrying = true;
     this.stopped = false;
-    const task = this._getNextTask();
-    if (task) {
-      this._addTask(task);
+    for (let i = 0; i < this.concurrency; i++) {
+      const task = this._getNextTask();
+      if (task) {
+        this._addTask(task);
+      }
     }
   }
 }

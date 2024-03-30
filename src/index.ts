@@ -171,8 +171,8 @@ export class TaskQueue extends TaskQueueBase {
 
   /**
    * Add tasks with callback functions to the queue.
-   * @param tasks The array of tasks with callback functions, IDs, and task
-   * status changes subscriber
+   * @param tasks The array of tasks with callback functions, IDs, task status
+   * update subscribers, and priorities
    */
   async addTasks(
     tasks: Array<{
@@ -183,20 +183,26 @@ export class TaskQueue extends TaskQueueBase {
     }>,
   ) {
     return Promise.all(
-      tasks.map((task) =>
-        (task.priority === 'important'
-          ? this.addPrioritizedTask
-          : this.addTask)(
-          task.callback,
-          task.taskId ?? getTaskId(),
-          task.onStatusUpdate,
-        ),
-      ),
+      tasks.map((task) => {
+        if (task.priority === 'important') {
+          return this.addPrioritizedTask(
+            task.callback,
+            task.taskId ?? getTaskId(),
+            task.onStatusUpdate,
+          );
+        } else {
+          return this.addTask(
+            task.callback,
+            task.taskId ?? getTaskId(),
+            task.onStatusUpdate,
+          );
+        }
+      }),
     );
   }
 
   /**
-   * Clear all waited tasks from the queue
+   * Clear all waited tasks from the queue.
    */
   clearWaitedTasks() {
     this.tasksWaitingQueue = [];
@@ -204,7 +210,7 @@ export class TaskQueue extends TaskQueueBase {
   }
 
   /**
-   * Clear all failed retryable tasks from the queue
+   * Clear all failed retryable tasks from the queue.
    */
   clearFailedRetryableTasks() {
     this.failedRetryableTaskQueue = [];
@@ -213,10 +219,7 @@ export class TaskQueue extends TaskQueueBase {
   /** @internal */
   private _assertMemorizingTasksEnabled() {
     if (!this.memorizeTasks) {
-      throw Error(
-        'Memorizing task details is not enabled. Please update the \
-        memorizeTasks configuration when initializing the queue instance',
-      );
+      throw Error('Memorizing task details is not enabled');
     }
   }
 
@@ -231,7 +234,7 @@ export class TaskQueue extends TaskQueueBase {
   }
 
   /**
-   * Get all task details with matching status.
+   * Get all task details with optional matching status.
    * @param status The matched status or array of statuses
    */
   getAllTasksDetails(status?: TaskStatus | Array<TaskStatus>) {

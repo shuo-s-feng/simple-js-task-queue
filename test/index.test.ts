@@ -2,11 +2,12 @@ import { TaskQueue } from '../src';
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 
 const TASK_COUNT = 20;
-const BASE_TIME_FACTOR = 50;
+const BASE_TIME_FACTOR = 100;
 
 const delay = (wait: number) => new Promise((res) => setTimeout(res, wait));
 
-// Helper function to generate a task, which returns "Result {id}" after {wait * BASE_TIME_FACTOR} ms
+// Helper function to generate a task, which returns "Result {id}" after
+// {wait * BASE_TIME_FACTOR} ms
 const generateTask = (id: number, wait: number) => {
   return async () => {
     await delay(wait * BASE_TIME_FACTOR);
@@ -481,7 +482,7 @@ describe('simple-js-task-queue', () => {
         concurrency: 0,
       });
     } catch (error) {
-      expect(error.message).toBe('Invalid concurrency 0');
+      expect(error.message).toBe('Concurrency must be at least 1');
     }
 
     queue = new TaskQueue({
@@ -490,30 +491,22 @@ describe('simple-js-task-queue', () => {
     try {
       queue.getTaskDetails(1);
     } catch (error) {
-      expect(error.message).toBe(
-        'Memorizing task details is not enabled. Please update the memorizeTasks configuration when initializing the queue instance',
-      );
+      expect(error.message).toBe('Memorizing task details is not enabled');
     }
     try {
       queue.getAllTasksDetails();
     } catch (error) {
-      expect(error.message).toBe(
-        'Memorizing task details is not enabled. Please update the memorizeTasks configuration when initializing the queue instance',
-      );
+      expect(error.message).toBe('Memorizing task details is not enabled');
     }
     try {
       queue.clearTaskDetails(1);
     } catch (error) {
-      expect(error.message).toBe(
-        'Memorizing task details is not enabled. Please update the memorizeTasks configuration when initializing the queue instance',
-      );
+      expect(error.message).toBe('Memorizing task details is not enabled');
     }
     try {
       queue.clearAllTasksDetails();
     } catch (error) {
-      expect(error.message).toBe(
-        'Memorizing task details is not enabled. Please update the memorizeTasks configuration when initializing the queue instance',
-      );
+      expect(error.message).toBe('Memorizing task details is not enabled');
     }
 
     try {
