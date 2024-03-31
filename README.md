@@ -70,29 +70,27 @@ queue
 
 The `TaskQueue` class is at the core of the library, offering a rich set of methods to manage tasks:
 
-#### Constructor
-
-- **`constructor(props?: TaskQueueProps)`**: Initializes a new instance of the task queue with optional configurations.
-
-#### Methods
-
-- **`addTask(callback, onStatusUpdate?, priority?)`**: Adds a new task to the queue.
-- **`addPrioritizedTask(callback, onStatusUpdate?)`**: Adds a high-priority task to the queue.
-- **`addTasks(tasks)`**: Bulk addition of tasks.
-- **`adjustConcurrency(newConcurrency)`**: Adjusts the number of tasks that can run concurrently, effective instantly.
-- **`start()`**: Starts or resumes task execution.
-- **`stop()`**: Pauses task execution.
-- **`retry()`**: Retries failed tasks.
-- **`subscribeTaskStatusChange(onTaskStatusUpdate)`**: Subscribes to task status updates.
-- **`unsubscribeTaskStatusChange(onTaskStatusUpdate)`**: Unsubscribes from task status updates.
-- **`getTaskDetails(taskId)`**: Fetches details of a specific task.
-- **`getAllTasksDetails(status?)`**: Retrieves details of all tasks, optionally filtered by status.
-- **`clearTaskDetails(taskId)`**: Clears details of a specific task.
-- **`clearAllTasksDetails()`**: Removes details of all tasks from memory.
-- **`clearFailedRetryableTasks()`**: Clears the list of failed tasks marked for retry.
-- **`clearWaitedTasks()`**: Removes all tasks waiting to be executed.
-- **`removeFailedRetryableTask(taskIdOrTask)`**: Removes a specific task from the retry list.
-- **`removeWaitedTask(taskId)`**: Removes a specific task from the waiting list.
+| Method Name                   | Description                                                                 | Parameters                             |
+| ----------------------------- | --------------------------------------------------------------------------- | -------------------------------------- |
+| `addTask`                     | Adds a new task to the queue.                                               | `callback, onStatusUpdate?, priority?` |
+| `addPrioritizedTask`          | Adds a high-priority task to the queue.                                     | `callback, onStatusUpdate?`            |
+| `addTasks`                    | Bulk addition of tasks.                                                     | `tasks`                                |
+| `adjustConcurrency`           | Adjusts the number of tasks that can run concurrently, effective instantly. | `newConcurrency`                       |
+| `start`                       | Starts or resumes task execution.                                           |                                        |
+| `stop`                        | Pauses task execution.                                                      |                                        |
+| `retry`                       | Retries failed tasks.                                                       |                                        |
+| `subscribeTaskStatusChange`   | Subscribes to task status updates.                                          | `onTaskStatusUpdate`                   |
+| `unsubscribeTaskStatusChange` | Unsubscribes from task status updates.                                      | `onTaskStatusUpdate`                   |
+| `getTaskDetails`              | Fetches details of a specific task.                                         | `taskId`                               |
+| `getAllTasksDetails`          | Retrieves details of all tasks, optionally filtered by status.              | `status?`                              |
+| `getConcurrency`              | Fetches the concurrency of the task queue.                                  |                                        |
+| `isManuallyStopped`           | Checks if the task queue is manually stopped.                               |                                        |
+| `clearTaskDetails`            | Clears details of a specific task.                                          | `taskId`                               |
+| `clearAllTasksDetails`        | Removes details of all tasks from memory.                                   |                                        |
+| `clearFailedRetryableTasks`   | Clears the list of failed tasks marked for retry.                           |                                        |
+| `clearWaitedTasks`            | Removes all tasks waiting to be executed.                                   |                                        |
+| `removeFailedRetryableTask`   | Removes a specific task from the retry list.                                | `taskIdOrTask`                         |
+| `removeWaitedTask`            | Removes a specific task from the waiting list.                              | `taskId`                               |
 
 For more detailed information on each method, including parameter types and return values, please refer to the TypeDoc generated documentation in the `docs` folder or [this link](https://shuo-s-feng.github.io/simple-js-task-queue/).
 

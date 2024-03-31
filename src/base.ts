@@ -291,9 +291,9 @@ export class TaskQueueBase extends TaskQueueCore {
   }
 
   /**
-   * Check if the queue is stopped.
+   * Check if the queue is manually stopped.
    */
-  isStopped(): boolean {
+  isManuallyStopped(): boolean {
     return this.stopped;
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "simple-js-task-queue",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "A simple javascript/typesciprt tasks queue that supports concurrency control",
   "keywords": [
     "task",
@@ -18,7 +18,9 @@
     "lint": "eslint .",
     "clean": "(rm -rf ./dist || true) && (rm -rf ./coverage || true) && (rm -rf yarn-error.log || true) && (rm -rf yarn.lock || true)",
     "clean:all": "npm run clean && (rm -rf node_modules || true)",
-    "doc": "typedoc"
+    "doc": "typedoc",
+    "npm:login": "npm login",
+    "npm:publish": "npm run build && npm publish"
   },
   "repository": {
     "type": "git",

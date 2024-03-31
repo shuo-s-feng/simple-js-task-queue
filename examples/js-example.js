@@ -1,13 +1,15 @@
 const { TaskQueue } = require('../dist');
 
-// Initialize a queue with maximum concurrency 2, returning error if tasks fail, and memorizing task details
+// Initialize a queue with maximum concurrency 2, returning error if tasks fail,
+// and memorizing task details
 const queue = new TaskQueue({
   concurrency: 2,
   returnError: true,
   memorizeTasks: true,
 });
 
-// Helper function to generate a task, which returns "Result {id}" after {wait} seconds
+// Helper function to generate a task, which returns "Result {id}" after {wait}
+// seconds
 const generateTask = (id, wait) => {
   return async () => {
     await new Promise((res) => setTimeout(res, wait * 1000));
@@ -48,7 +50,8 @@ queue.addTask(tasks[1], 1).then((result) => handleTaskResult(1, result));
 // Run task 2 with ID 2, and log the result
 queue.addTask(tasks[2], 2).then((result) => handleTaskResult(2, result));
 
-// Run task 3 with ID 3, subscribe to the task status updates, and log the result
+// Run task 3 with ID 3, subscribe to the task status updates, and log the
+// result
 queue
   .addTask(tasks[3], 3, handleTaskStatusChange)
   .then((result) => handleTaskResult(3, result));
@@ -71,11 +74,13 @@ setTimeout(() => {
 //
 // After 1.001 seconds, the result of task 1 is Result 1
 //
-// After 1.002 seconds, the status of task 3 changed to running with result undefined
+// After 1.002 seconds, the status of task 3 changed to running with result
+// undefined
 //
 // After 2.002 seconds, the result of task 2 is Result 2
 //
-// After 4.003 seconds, the status of task 3 changed to success with result Result 3
+// After 4.003 seconds, the status of task 3 changed to success with result
+// Result 3
 //
 // After 4.003 seconds, the result of task 3 is Result 3
 //
