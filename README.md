@@ -90,7 +90,7 @@ The `TaskQueue` class is at the core of the library, offering a rich set of meth
 | `clearFailedRetryableTasks`   | Clears the list of failed tasks marked for retry.                           |                                        |
 | `clearWaitedTasks`            | Removes all tasks waiting to be executed.                                   |                                        |
 | `removeFailedRetryableTask`   | Removes a specific task from the retry list.                                | `taskIdOrTask`                         |
-| `removeWaitedTask`            | Removes a specific task from the waiting list.                              | `taskId`                               |
+| `removeWaitedTask`            | Removes a specific task from the waiting list.                              | `taskIdOrTask`                         |
 
 For more detailed information on each method, including parameter types and return values, please refer to the TypeDoc generated documentation in the `docs` folder or [this link](https://shuo-s-feng.github.io/simple-js-task-queue/).
 
