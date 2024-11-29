@@ -2,7 +2,7 @@
 
 <div align="center">
   A simple javascript/typesciprt tasks queue that supports concurrency control, designed by
-  <a href="https://linkedin.com/in/shuo-feng-1030/">Shuo Feng</a>
+  <a href="https://linkedin.com/in/shuo-feng/">Shuo Feng</a>
 </div>
 
 <br />
