@@ -216,7 +216,7 @@ export abstract class TaskQueueCore {
     ...messages: Array<any>
   ) {
     if (this.verbose) {
-      if (config.taskId) {
+      if (config.taskId !== undefined) {
         this.logger[config.level](`Task ${config.taskId} |`, ...messages);
       } else {
         this.logger[config.level](...messages);
@@ -397,12 +397,6 @@ export abstract class TaskQueueCore {
             : `Rejected task ${task.taskId} with error ${result}`,
         );
 
-        this._log(
-          { level: 'info' },
-          'promiseQueue.taskIds',
-          promiseQueue.taskIds,
-        );
-
         // If the current queue has a parent queue with tasks assigned,
         // then this queue should stop and let the parent queue continue
         // execution
@@ -444,7 +438,7 @@ export abstract class TaskQueueCore {
                 level: 'info',
                 taskId: task.taskId,
               },
-              `Picked the next task ${nextTask.taskId} to continue execution`,
+              `Adding the next task ${nextTask.taskId} to continue execution`,
             );
 
             this._addTask(nextTask);

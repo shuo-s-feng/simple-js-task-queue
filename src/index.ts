@@ -208,6 +208,8 @@ export class TaskQueue extends TaskQueueBase {
   clearWaitedTasks() {
     this.tasksWaitingQueue = [];
     this.prioritizedTasksWaitingQueue = [];
+
+    this._log({ level: 'info' }, 'Cleared waited tasks');
   }
 
   /**
@@ -227,6 +229,8 @@ export class TaskQueue extends TaskQueueBase {
       this.prioritizedTasksWaitingQueue.filter(
         (task) => task.taskId !== taskId,
       );
+
+    this._log({ level: 'info' }, `Removed waited task ${taskId}`);
   }
 
   /**
@@ -234,6 +238,8 @@ export class TaskQueue extends TaskQueueBase {
    */
   clearFailedRetryableTasks() {
     this.failedRetryableTaskQueue = [];
+
+    this._log({ level: 'info' }, 'Cleared failed retryable tasks');
   }
 
   /**
@@ -249,6 +255,8 @@ export class TaskQueue extends TaskQueueBase {
     this.failedRetryableTaskQueue = this.failedRetryableTaskQueue.filter(
       (task) => task.taskId !== taskId,
     );
+
+    this._log({ level: 'info' }, `Removed failed retryable task ${taskId}`);
   }
 
   /** @internal */
@@ -294,6 +302,8 @@ export class TaskQueue extends TaskQueueBase {
     this._assertMemorizingTasksEnabled();
 
     delete this.taskLookup[taskId];
+
+    this._log({ level: 'info' }, `Cleared task details ${taskId}`);
   }
 
   /**
@@ -303,6 +313,8 @@ export class TaskQueue extends TaskQueueBase {
     this._assertMemorizingTasksEnabled();
 
     this.taskLookup = {};
+
+    this._log({ level: 'info' }, 'Cleared all task details');
   }
 }
 

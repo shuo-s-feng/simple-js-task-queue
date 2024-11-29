@@ -257,13 +257,25 @@ export class TaskQueueBase extends TaskQueueCore {
    * Start the queue execution.
    */
   start() {
+    this._log(
+      {
+        level: 'info',
+      },
+      'Start the queue execution',
+    );
+
     this.stopped = false;
-    for (let i = 0; i < this.concurrency; i++) {
-      const task = this._getNextTask();
-      if (task) {
-        this._addTask(task);
+
+    // Enumerate through all promise queues and add tasks to the queue if the
+    // queue is not full
+    this.promiseQueues.forEach((queue) => {
+      if (queue.length < this.promiseQueueCapacity) {
+        const task = this._getNextTask();
+        if (task) {
+          this._addTask(task);
+        }
       }
-    }
+    });
   }
 
   /**
@@ -271,6 +283,13 @@ export class TaskQueueBase extends TaskQueueCore {
    * Please note, the current ongoing task will not be stopped immediately.
    */
   stop() {
+    this._log(
+      {
+        level: 'info',
+      },
+      'Stop the queue execution',
+    );
+
     this.stopped = true;
   }
 
@@ -280,14 +299,26 @@ export class TaskQueueBase extends TaskQueueCore {
    * as "true" for the queue.
    */
   retry() {
+    this._log(
+      {
+        level: 'info',
+      },
+      'Retry the queue execution',
+    );
+
     this.retrying = true;
     this.stopped = false;
-    for (let i = 0; i < this.concurrency; i++) {
-      const task = this._getNextTask();
-      if (task) {
-        this._addTask(task);
+
+    // Enumerate through all promise queues and add tasks to the queue if the
+    // queue is not full
+    this.promiseQueues.forEach((queue) => {
+      if (queue.length < this.promiseQueueCapacity) {
+        const task = this._getNextTask();
+        if (task) {
+          this._addTask(task);
+        }
       }
-    }
+    });
   }
 
   /**
