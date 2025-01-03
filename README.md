@@ -1,7 +1,7 @@
 <h1 align="center">simple-js-task-queue</h1>
 
 <div align="center">
-  A simple javascript/typesciprt tasks queue that supports concurrency control, designed by
+  A simple javascript/typesciprt tasks queue that supports dynamic concurrency control, designed by
   <a href="https://gravatar.com/shuosfeng/">Shuo Feng</a>
 </div>
 
