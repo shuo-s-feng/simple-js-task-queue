@@ -1,29 +1,52 @@
 {
   "compilerOptions": {
-    "target": "es5",
+    // ======================
+    // Core Options
+    // ======================
+    // Generates code that uses ES2017 features (e.g., async/await)
+    // No need for polyfill if the environment is modern enough.
+    "target": "ES2017",
+
+    // Use CommonJS if you’re shipping a Node library
+    // or "ESNext" if you want an ESM-only package.
     "module": "CommonJS",
-    "lib": ["es2015", "es2016", "es2017", "esnext", "dom"],
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
+
+    // Node-style resolution
     "moduleResolution": "node",
-    "typeRoots": ["node_modules/@types"],
-    "allowJs": true,
-    "declaration": true,
-    "sourceMap": true,
+
+    // Includes ES2017 declarations (Promise, etc.)
+    // Add "DOM" if you need browser APIs, otherwise omit it.
+    "lib": ["ES2017"],
+
+    // Where the compiled .js files go
     "outDir": "./dist",
-    "declarationDir": "dist",
-    "removeComments": false,
-    "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
+
+    // ======================
+    // Declarations & Maps
+    // ======================
+    // Emit .d.ts files (for library distribution)
+    "declaration": true,
+    // If you want them in a separate directory, you can set "declarationDir"
+    // e.g. "declarationDir": "./dist/types"
+
+    // Emit source maps (helpful for debugging)
+    "sourceMap": true,
+
+    // ======================
+    // Strictness & Interop
+    // ======================
     "strict": true,
+    "esModuleInterop": true,
+
+    // Optional extra strict flags
     "noImplicitAny": true,
     "strictNullChecks": true,
     "strictPropertyInitialization": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "skipLibCheck": true,
-    "stripInternal": true
+
+    // Skip type-checking .d.ts files in node_modules
+    "skipLibCheck": true
   },
   "include": ["src"],
   "exclude": ["node_modules"]
